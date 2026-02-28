@@ -116,6 +116,8 @@ class SandboxManager(BaseManager):
         self.validate_sandbox_spec(self.rock_config.runtime, config)
         docker_deployment_config: DockerDeploymentConfig = await self.deployment_manager.init_config(config)
         sandbox_id = docker_deployment_config.container_name
+        if getattr(docker_deployment_config, "env_dir_tar_ref", None) is not None and not (docker_deployment_config.image or "").strip():
+            docker_deployment_config.image = f"rock_env_image:{sandbox_id}"
         sandbox_info: SandboxInfo = await self._operator.submit(docker_deployment_config, user_info)
         stop_time = str(int(time.time()) + docker_deployment_config.auto_clear_time * 60)
         auto_clear_time_dict = {
