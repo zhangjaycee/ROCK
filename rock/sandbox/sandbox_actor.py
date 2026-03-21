@@ -274,5 +274,6 @@ class SandboxActor(GemActor):
                 "namespace": await self.namespace(),
                 "cpus": self._config.cpus,
                 "memory": self._config.memory,
+                "limit_disk": self._config.limit_disk,
             }
         return {}

@@ -36,6 +36,7 @@ class SandboxConfig(BaseConfig):
     memory: str = "8g"
     cpus: float = 2
     limit_cpus: float | None = None
+    limit_disk: str = "20g"
     user_id: str | None = None
     experiment_id: str | None = None
     cluster: str = "zb"

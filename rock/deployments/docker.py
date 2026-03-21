@@ -295,10 +295,24 @@ class DockerDeployment(AbstractDeployment):
             return [f"--cpu-shares={cpu_shares}", f"--cpus={self.config.limit_cpus}"]
         return [f"--cpus={self.config.cpus}"]
 
+    def _storage_opts(self):
+        if self.config.limit_disk is not None:
+            return ["--storage-opt", f"size={self.config.limit_disk}"]
+        return []
+
     async def start(self):
         """Starts the runtime."""
         if not self.sandbox_validator.check_availability():
             raise Exception("Docker is not available")
+
+        # Check storage-opt support on worker node and potentially disable limit_disk
+        if self.config.limit_disk is not None:
+            if not DockerUtil.detect_storage_opt_support():
+                logger.warning(
+                    f"[{self.config.container_name}] --storage-opt not supported on this worker "
+                    f"(requires overlay2 + xfs + prjquota), ignoring limit_disk={self.config.limit_disk}"
+                )
+                self.config.limit_disk = None
 
         if self._container_name is None:
             self.set_container_name(self._get_container_name())
@@ -359,6 +373,7 @@ class DockerDeployment(AbstractDeployment):
             f"{self._service_status.get_mapped_port(Port.SSH)}:22",
             *self._memory(),
             *self._cpus(),
+            *self._storage_opts(),
             *platform_arg,
             *self._config.docker_args,
             "--name",

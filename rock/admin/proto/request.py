@@ -29,6 +29,8 @@ class SandboxStartRequest(BaseModel):
     """The amount of CPUs to allocate for the container. Used as --cpu-shares (cpus * 1024)."""
     limit_cpus: float | None = None
     """Hard limit on the number of CPU cores the container can use. Used as --cpus."""
+    limit_disk: str = "20g"
+    """Maximum rootfs disk size for the container (e.g., '20g', '50g')."""
     sandbox_id: str | None = Field(default=None)
     """The id of the sandbox."""
     registry_username: str | None = None

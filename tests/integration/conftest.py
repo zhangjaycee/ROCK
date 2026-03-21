@@ -31,6 +31,11 @@ SKIP_IF_NO_DOCKER = pytest.mark.skipif(
     reason=f"Requires Docker and image {env_vars.ROCK_ENVHUB_DEFAULT_DOCKER_IMAGE}",
 )
 
+SKIP_IF_NO_STORAGE_OPT = pytest.mark.skipif(
+    not DockerUtil.detect_storage_opt_support(),
+    reason="Requires Docker with storage-opt support (overlay2 + xfs + prjquota/pquota)",
+)
+
 
 @dataclass
 class RemoteServer:
