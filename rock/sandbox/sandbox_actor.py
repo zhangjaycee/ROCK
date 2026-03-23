@@ -128,6 +128,8 @@ class SandboxActor(GemActor):
             logger.error(f"start deployment failed: {ex}", exc_info=True)
             raise ex
         if isinstance(self._deployment, DockerDeployment):
+            # Sync back effective runtime config (e.g. limit_disk may be downgraded to None).
+            self._config.limit_disk = self._deployment.config.limit_disk
             self._clean_container_background()
         await self._setup_monitor()
 
