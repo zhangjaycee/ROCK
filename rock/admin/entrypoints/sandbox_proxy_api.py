@@ -114,21 +114,21 @@ async def list_sandboxes(request: Request) -> RockResponse[SandboxListResponse]:
 
 @sandbox_proxy_router.websocket("/sandboxes/{id}/proxy/ws")
 @sandbox_proxy_router.websocket("/sandboxes/{id}/proxy/ws/{path:path}")
-async def websocket_proxy(websocket: WebSocket, id: str, path: str = "", port: int | None = Query(None)):
+async def websocket_proxy(websocket: WebSocket, id: str, path: str = "", rock_target_port: int | None = Query(None)):
     sandbox_id = id
-    logger.info(f"Client connected to WebSocket proxy: {sandbox_id}, path: {path}, port: {port}")
+    logger.info(f"Client connected to WebSocket proxy: {sandbox_id}, path: {path}, port: {rock_target_port}")
 
-    if port is not None:
+    if rock_target_port is not None:
         from rock.common.port_validation import validate_port_forward_port
 
-        is_valid, error_msg = validate_port_forward_port(port)
+        is_valid, error_msg = validate_port_forward_port(rock_target_port)
         if not is_valid:
             await websocket.close(code=1008, reason=error_msg)
             return
 
     await websocket.accept()
     try:
-        await sandbox_proxy_service.websocket_proxy(websocket, sandbox_id, path, port=port)
+        await sandbox_proxy_service.websocket_proxy(websocket, sandbox_id, path, port=rock_target_port)
     except WebSocketDisconnect:
         logger.info(f"Client disconnected from WebSocket proxy: {sandbox_id}")
     except Exception as e:
@@ -202,7 +202,7 @@ async def http_proxy(
     sandbox_id: str,
     request: Request,
     path: str = "",
-    port: int | None = Query(None),
+    rock_target_port: int | None = Query(None),
 ):
     body = None
     if request.method not in ("GET", "HEAD", "DELETE", "OPTIONS"):
@@ -211,7 +211,7 @@ async def http_proxy(
         except Exception:
             body = None
     return await sandbox_proxy_service.http_proxy(
-        sandbox_id, path, body, request.headers, method=request.method, port=port
+        sandbox_id, path, body, request.headers, method=request.method, port=rock_target_port
     )
 
 

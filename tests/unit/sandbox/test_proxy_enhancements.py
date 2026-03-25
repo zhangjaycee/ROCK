@@ -115,10 +115,10 @@ class TestHttpProxyAllMethods:
         assert body is None
 
     async def test_port_param_is_passed_to_service(self, app):
-        """When port=9000 is given, service.http_proxy should receive port=9000."""
+        """When rock_target_port=9000 is given, service.http_proxy should receive port=9000."""
         a, svc = app
         async with AsyncClient(transport=ASGITransport(app=a), base_url="http://test") as client:
-            await client.get("/sandboxes/sb1/proxy/status?port=9000")
+            await client.get("/sandboxes/sb1/proxy/status?rock_target_port=9000")
 
         svc.http_proxy.assert_called_once()
         call = svc.http_proxy.call_args
@@ -126,7 +126,7 @@ class TestHttpProxyAllMethods:
         assert port == 9000
 
     async def test_port_defaults_to_none_when_not_given(self, app):
-        """When port is not specified, service.http_proxy should receive port=None."""
+        """When rock_target_port is not specified, service.http_proxy should receive port=None."""
         a, svc = app
         async with AsyncClient(transport=ASGITransport(app=a), base_url="http://test") as client:
             await client.get("/sandboxes/sb1/proxy/status")
@@ -145,10 +145,10 @@ class TestWebsocketProxyPortParam:
     """WebSocket proxy endpoint should accept an optional port query parameter."""
 
     async def test_websocket_proxy_passes_port_to_service(self, app):
-        """When port=8888 is given, service.websocket_proxy should receive port=8888."""
+        """When rock_target_port=8888 is given, service.websocket_proxy should receive port=8888."""
         a, svc = app
         client = TestClientWS(a)
-        with client.websocket_connect("/sandboxes/sb1/proxy/ws?port=8888"):
+        with client.websocket_connect("/sandboxes/sb1/proxy/ws?rock_target_port=8888"):
             pass
 
         svc.websocket_proxy.assert_called_once()
@@ -157,7 +157,7 @@ class TestWebsocketProxyPortParam:
         assert port == 8888
 
     async def test_websocket_proxy_defaults_to_none_when_no_port(self, app):
-        """When port is not specified, service.websocket_proxy should receive port=None."""
+        """When rock_target_port is not specified, service.websocket_proxy should receive port=None."""
         a, svc = app
         client = TestClientWS(a)
         with client.websocket_connect("/sandboxes/sb1/proxy/ws"):
@@ -169,12 +169,12 @@ class TestWebsocketProxyPortParam:
         assert port is None
 
     async def test_websocket_proxy_rejects_invalid_port(self, app):
-        """When port < 1024, websocket connection should close with code 1008."""
+        """When rock_target_port < 1024, websocket connection should close with code 1008."""
         a, svc = app
         client = TestClientWS(a)
         # Port 80 is below 1024 — expect rejection without calling service
         try:
-            with client.websocket_connect("/sandboxes/sb1/proxy/ws?port=80"):
+            with client.websocket_connect("/sandboxes/sb1/proxy/ws?rock_target_port=80"):
                 pass
         except Exception:
             pass  # Expect disconnect
