@@ -215,14 +215,7 @@ class SandboxProxyService:
         client_subprotocols = getattr(client_websocket, "subprotocols", []) or []
         upstream_subprotocols = client_subprotocols if client_subprotocols else ["binary"]
 
-        logger.info(f"[WS-DEBUG] target_url={target_url}")
-        logger.info(f"[WS-DEBUG] client_subprotocols={client_subprotocols}")
-        logger.info(f"[WS-DEBUG] upstream_subprotocols={upstream_subprotocols}")
-        logger.info(f"[WS-DEBUG] client_websocket type={type(client_websocket)}")
-        logger.info(f"[WS-DEBUG] client_websocket.headers={dict(getattr(client_websocket, 'headers', {}))}")
-
         try:
-            logger.info(f"[WS-DEBUG] Connecting to upstream...")
             async with websockets.connect(
                 target_url,
                 ping_interval=None,
@@ -230,70 +223,28 @@ class SandboxProxyService:
                 subprotocols=upstream_subprotocols,
             ) as target_websocket:
                 negotiated = getattr(target_websocket, "subprotocol", None)
-                logger.info(f"[WS-DEBUG] Upstream connected, negotiated subprotocol={negotiated}")
-
                 response_subprotocol = negotiated if client_subprotocols else None
-                logger.info(f"[WS-DEBUG] Accepting client with subprotocol={response_subprotocol}")
                 await client_websocket.accept(subprotocol=response_subprotocol)
-                logger.info(f"[WS-DEBUG] Client accepted")
 
-                async def forward_client_to_target():
-                    try:
-                        while True:
-                            msg = await client_websocket.receive()
-                            logger.info(f"[WS-DEBUG] client->target msg type={msg.get('type')}")
-                            if msg["type"] == "websocket.disconnect":
-                                logger.info(
-                                    f"[WS-DEBUG] Client disconnected, code={msg.get('code')}, reason={msg.get('reason')}"
-                                )
-                                break
-                            data = msg.get("bytes") or msg.get("text", "")
-                            logger.info(
-                                f"[WS-DEBUG] client->target data type={type(data).__name__}, len={len(data) if data else 0}"
-                            )
-                            if data:
-                                await target_websocket.send(data)
-                                logger.info(f"[WS-DEBUG] client->target sent {len(data)} bytes")
-                    except Exception as e:
-                        logger.error(
-                            f"[WS-DEBUG] forward_client_to_target error: {type(e).__name__}: {e}", exc_info=True
-                        )
-
-                async def forward_target_to_client():
-                    try:
-                        while True:
-                            data = await target_websocket.recv()
-                            logger.info(
-                                f"[WS-DEBUG] target->client data type={type(data).__name__}, len={len(data) if data else 0}"
-                            )
-                            if isinstance(data, bytes):
-                                await client_websocket.send_bytes(data)
-                            else:
-                                await client_websocket.send_text(data)
-                            logger.info(f"[WS-DEBUG] target->client sent {len(data)} bytes")
-                    except websockets.ConnectionClosed as e:
-                        logger.info(f"[WS-DEBUG] Target closed, code={e.code}, reason={e.reason}")
-                    except Exception as e:
-                        logger.error(
-                            f"[WS-DEBUG] forward_target_to_client error: {type(e).__name__}: {e}", exc_info=True
-                        )
-
-                client_to_target = asyncio.create_task(forward_client_to_target())
-                target_to_client = asyncio.create_task(forward_target_to_client())
+                client_to_target = asyncio.create_task(
+                    self._forward_messages(client_websocket, target_websocket, "client->target")
+                )
+                target_to_client = asyncio.create_task(
+                    self._forward_messages(target_websocket, client_websocket, "target->client")
+                )
 
                 done, pending = await asyncio.wait(
                     [client_to_target, target_to_client], return_when=asyncio.FIRST_COMPLETED
                 )
 
-                logger.info(f"[WS-DEBUG] Task completed, cancelling pending")
                 for task in pending:
                     task.cancel()
 
         except websockets.ConnectionClosed as e:
-            logger.error(f"[WS-DEBUG] Upstream connection closed: code={e.code}, reason={e.reason}")
+            logger.error(f"Upstream WebSocket connection closed: code={e.code}, reason={e.reason}")
             await client_websocket.close(code=e.code, reason=e.reason or "")
         except Exception as e:
-            logger.error(f"[WS-DEBUG] WebSocket proxy error: {type(e).__name__}: {e}", exc_info=True)
+            logger.error(f"WebSocket proxy error: {type(e).__name__}: {e}", exc_info=True)
             await client_websocket.close(code=1011, reason=f"Proxy error: {str(e)}")
 
     async def websocket_to_tcp_proxy(
