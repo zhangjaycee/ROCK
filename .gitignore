@@ -22,3 +22,5 @@ logs
 docs/superpowers/
 
 .env
+*.db
+ddl/
