@@ -90,7 +90,7 @@ class RayOperator(AbstractOperator):
             actor: SandboxActor = await self._ray_service.async_ray_get_actor(self._get_actor_name(sandbox_id))
             sandbox_info: SandboxInfo = await self._ray_service.async_ray_get(actor.sandbox_info.remote())
             remote_status: ServiceStatus = await self._ray_service.async_ray_get(actor.get_status.remote())
-            sandbox_info["phases"] = remote_status.phases
+            sandbox_info["phases"] = {name: phase.to_dict() for name, phase in remote_status.phases.items()}
             sandbox_info["port_mapping"] = remote_status.get_port_mapping()
             alive = await self._ray_service.async_ray_get(actor.is_alive.remote())
             # TODO: sink update state according to is_alive logic into SandboxInfo
@@ -101,7 +101,6 @@ class RayOperator(AbstractOperator):
             redis_info = await self.get_sandbox_info_from_redis(sandbox_id)
             if redis_info:
                 redis_info.update(sandbox_info)
-                redis_info["phases"] = {name: phase.to_dict() for name, phase in remote_status.phases.items()}
                 return redis_info
             else:
                 return sandbox_info

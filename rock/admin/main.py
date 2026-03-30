@@ -65,6 +65,25 @@ async def lifespan(app: FastAPI):
         )
         await redis_provider.init_pool()
 
+    # init optional database provider
+    db_provider = None
+    sandbox_table = None
+    db_url = rock_config.database.url
+    if db_url:
+        from rock.admin.core.db_provider import DatabaseProvider
+        from rock.admin.core.sandbox_table import SandboxTable
+        from rock.config import DatabaseConfig
+
+        db_provider = DatabaseProvider(db_config=DatabaseConfig(url=db_url))
+        await db_provider.init_pool()
+        sandbox_table = SandboxTable(db_provider)
+    else:
+        logger.info("database.url is not configured, DB persistence disabled")
+
+    from rock.sandbox.sandbox_repository import SandboxRepository
+
+    meta_repo = SandboxRepository(redis_provider=redis_provider, sandbox_table=sandbox_table)
+
     # init scheduler thread
     scheduler_thread = None
 
@@ -87,20 +106,20 @@ async def lifespan(app: FastAPI):
         if rock_config.runtime.enable_auto_clear:
             sandbox_manager = GemManager(
                 rock_config,
-                redis_provider=redis_provider,
                 ray_namespace=rock_config.ray.namespace,
                 ray_service=ray_service,
                 enable_runtime_auto_clear=True,
                 operator=operator,
+                meta_repo=meta_repo,
             )
         else:
             sandbox_manager = GemManager(
                 rock_config,
-                redis_provider=redis_provider,
                 ray_namespace=rock_config.ray.namespace,
                 ray_service=ray_service,
                 enable_runtime_auto_clear=False,
                 operator=operator,
+                meta_repo=meta_repo,
             )
         set_sandbox_manager(sandbox_manager)
         warmup_service = WarmupService(rock_config.warmup)
@@ -118,7 +137,7 @@ async def lifespan(app: FastAPI):
             logger.info("Scheduler thread skipped on non-primary pod")
 
     else:
-        sandbox_manager = SandboxProxyService(rock_config=rock_config, redis_provider=redis_provider)
+        sandbox_manager = SandboxProxyService(rock_config=rock_config, meta_repo=meta_repo)
         set_sandbox_proxy_service(sandbox_manager)
 
     logger.info("rock-admin start")
@@ -129,6 +148,9 @@ async def lifespan(app: FastAPI):
     if scheduler_thread:
         scheduler_thread.stop()
         logger.info("Scheduler thread stopped")
+
+    if db_provider:
+        await db_provider.close_pool()
 
     if redis_provider:
         await redis_provider.close_pool()

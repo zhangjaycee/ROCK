@@ -18,20 +18,26 @@ from rock.config import RockConfig
 from rock.deployments.config import DockerDeploymentConfig
 from rock.sandbox.sandbox_actor import SandboxActor
 from rock.sandbox.sandbox_manager import SandboxManager
-from rock.utils.providers import RedisProvider
-
+from rock.sandbox.sandbox_repository import SandboxRepository
 
 class GemManager(SandboxManager):
     def __init__(
         self,
         rock_config: RockConfig,
-        redis_provider: RedisProvider | None = None,
+        meta_repo: SandboxRepository | None = None,
         ray_namespace: str = env_vars.ROCK_RAY_NAMESPACE,
         ray_service: RayService | None = None,
         enable_runtime_auto_clear: bool = False,
         operator=None,
     ):
-        super().__init__(rock_config, redis_provider, ray_namespace, ray_service, enable_runtime_auto_clear, operator)
+        super().__init__(
+            rock_config,
+            meta_repo=meta_repo,
+            ray_namespace=ray_namespace,
+            ray_service=ray_service,
+            enable_runtime_auto_clear=enable_runtime_auto_clear,
+            operator=operator,
+        )
 
     async def env_make(self, env_id: str) -> EnvMakeResponse:
         config = DockerDeploymentConfig(image=env_vars.ROCK_ENVHUB_DEFAULT_DOCKER_IMAGE)

@@ -132,7 +132,7 @@ async def run(action: SandboxBashAction) -> RockResponse[BashObservation]:
 @sandbox_proxy_router.post("/sandboxes/batch")
 @handle_exceptions(error_message="batch get sandbox status failed")
 async def batch_get_status(request: BatchSandboxStatusRequest) -> RockResponse[BatchSandboxStatusResponse]:
-    statuses_list = await sandbox_proxy_service.batch_get_sandbox_status_from_redis(request.sandbox_ids)
+    statuses_list = await sandbox_proxy_service.batch_get_sandbox_status(request.sandbox_ids)
     response = BatchSandboxStatusResponse(statuses=statuses_list)
     return RockResponse(result=response)
 

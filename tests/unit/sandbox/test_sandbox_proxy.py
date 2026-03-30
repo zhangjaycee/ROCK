@@ -20,7 +20,7 @@ async def test_batch_get_sandbox_status(sandbox_manager: SandboxManager, sandbox
         sandbox_ids.append(response.sandbox_id)
         await check_sandbox_status_until_alive(sandbox_manager, response.sandbox_id)
     # batch get status
-    batch_response = await sandbox_proxy_service.batch_get_sandbox_status_from_redis(sandbox_ids)
+    batch_response = await sandbox_proxy_service.batch_get_sandbox_status(sandbox_ids)
 
     assert len(batch_response) == sandbox_count
     response_sandbox_ids = [status.sandbox_id for status in batch_response]
@@ -33,7 +33,7 @@ async def test_batch_get_sandbox_status(sandbox_manager: SandboxManager, sandbox
         assert status.state == State.RUNNING
 
     invalid_ids = sandbox_ids + ["invalid_sandbox_id_1", "invalid_sandbox_id_2"]
-    batch_response_with_invalid = await sandbox_proxy_service.batch_get_sandbox_status_from_redis(invalid_ids)
+    batch_response_with_invalid = await sandbox_proxy_service.batch_get_sandbox_status(invalid_ids)
     assert len(batch_response_with_invalid) == len(sandbox_ids)
     for sandbox_id in sandbox_ids:
         await sandbox_manager.stop(sandbox_id)
