@@ -80,3 +80,8 @@ class NacosConfigProvider:
     async def get_switch_status(self, switch_name: str, not_found_default: bool = False) -> bool:
         config = await self.get_config() or {}
         return bool((config.get("switch") or {}).get(switch_name, not_found_default))
+
+    async def get_config_value(self, key: str, default: str | None = None) -> str | None:
+        """Get a string config value from the top-level nacos config dict."""
+        config = await self.get_config() or {}
+        return config.get(key, default)
