@@ -1,12 +1,12 @@
-"""SandboxRepository - coordinator for Redis (hot path) + DB (query path) dual-write.
+"""SandboxMetaStore - coordinator for Redis (hot path) + DB (query path) dual-write.
 
 Redis remains the source of truth for live sandbox state.
 The database is an async replica used for indexed queries (list_by, etc.).
+All DB operations are awaited for consistency.
 """
 
 from __future__ import annotations
 
-import asyncio
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
@@ -25,7 +25,7 @@ logger = init_logger(__name__)
 _ACTIVE_STATES: list[str] = [State.RUNNING, State.PENDING]
 
 
-class SandboxRepository:
+class SandboxMetaStore:
     """Coordinates sandbox metadata across Redis (hot path) and DB (query path).
 
     Parameters
@@ -54,7 +54,7 @@ class SandboxRepository:
         sandbox_info: SandboxInfo,
         timeout_info: dict[str, str] | None = None,
     ) -> None:
-        """Write sandbox info to the Redis alive key and fire-and-forget a DB insert.
+        """Write sandbox info to the Redis alive key and await DB insert.
 
         Parameters
         ----------
@@ -66,24 +66,27 @@ class SandboxRepository:
             if timeout_info is not None:
                 await self._redis.json_set(timeout_sandbox_key(sandbox_id), "$", timeout_info)
 
-        self._fire_db_insert(sandbox_id, sandbox_info)
+        if self._db:
+            await self._safe_db_call(self._db.create, sandbox_id, sandbox_info)
 
     async def update(self, sandbox_id: str, sandbox_info: SandboxInfo) -> None:
-        """Merge *sandbox_info* into the existing Redis alive key and fire-and-forget a DB update."""
+        """Merge *sandbox_info* into the existing Redis alive key and await DB update."""
         if self._redis:
             current = await self._redis.json_get(alive_sandbox_key(sandbox_id), "$")
             merged: dict[str, Any] = {**(current[0] if current else {}), **sandbox_info}
             await self._redis.json_set(alive_sandbox_key(sandbox_id), "$", merged)
 
-        self._fire_db_update(sandbox_id, sandbox_info)
+        if self._db:
+            await self._safe_db_call(self._db.update, sandbox_id, sandbox_info)
 
     async def delete(self, sandbox_id: str) -> None:
-        """Delete Redis alive + timeout keys and fire-and-forget a DB delete."""
+        """Delete Redis alive + timeout keys and await DB delete."""
         if self._redis:
             await self._redis.json_delete(alive_sandbox_key(sandbox_id))
             await self._redis.json_delete(timeout_sandbox_key(sandbox_id))
 
-        self._fire_db_delete(sandbox_id)
+        if self._db:
+            await self._safe_db_call(self._db.delete, sandbox_id)
 
     async def archive(self, sandbox_id: str, final_info: SandboxInfo) -> None:
         """Persist final state to DB, then remove sandbox from Redis.
@@ -98,7 +101,8 @@ class SandboxRepository:
         disappears.  If the DB write fails the exception is swallowed and
         logged, but Redis cleanup still proceeds.
         """
-        await self._await_db_update(sandbox_id, final_info)
+        if self._db:
+            await self._safe_db_call(self._db.update, sandbox_id, final_info)
 
         if self._redis:
             await self._redis.json_delete(alive_sandbox_key(sandbox_id))
@@ -244,26 +248,6 @@ class SandboxRepository:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-
-    # --- fire-and-forget variants (non-blocking) ----------------------
-
-    def _fire_db_insert(self, sandbox_id: str, sandbox_info: SandboxInfo) -> None:
-        if self._db:
-            asyncio.create_task(self._safe_db_call(self._db.create, sandbox_id, sandbox_info))
-
-    def _fire_db_update(self, sandbox_id: str, sandbox_info: SandboxInfo) -> None:
-        if self._db:
-            asyncio.create_task(self._safe_db_call(self._db.update, sandbox_id, sandbox_info))
-
-    def _fire_db_delete(self, sandbox_id: str) -> None:
-        if self._db:
-            asyncio.create_task(self._safe_db_call(self._db.delete, sandbox_id))
-
-    # --- blocking variant (caller awaits completion) ------------------
-
-    async def _await_db_update(self, sandbox_id: str, sandbox_info: SandboxInfo) -> None:
-        if self._db:
-            await self._safe_db_call(self._db.update, sandbox_id, sandbox_info)
 
     @staticmethod
     async def _safe_db_call(fn: Callable[..., Awaitable[Any]], *args: Any) -> None:

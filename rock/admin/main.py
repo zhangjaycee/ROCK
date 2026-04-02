@@ -80,9 +80,9 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("database.url is not configured, DB persistence disabled")
 
-    from rock.sandbox.sandbox_repository import SandboxRepository
+    from rock.sandbox.sandbox_meta_store import SandboxMetaStore
 
-    meta_repo = SandboxRepository(redis_provider=redis_provider, sandbox_table=sandbox_table)
+    meta_store = SandboxMetaStore(redis_provider=redis_provider, sandbox_table=sandbox_table)
 
     # init scheduler thread
     scheduler_thread = None
@@ -111,7 +111,7 @@ async def lifespan(app: FastAPI):
                 ray_service=ray_service,
                 enable_runtime_auto_clear=True,
                 operator=operator,
-                meta_repo=meta_repo,
+                meta_store=meta_store,
             )
         else:
             sandbox_manager = GemManager(
@@ -120,7 +120,7 @@ async def lifespan(app: FastAPI):
                 ray_service=ray_service,
                 enable_runtime_auto_clear=False,
                 operator=operator,
-                meta_repo=meta_repo,
+                meta_store=meta_store,
             )
         set_sandbox_manager(sandbox_manager)
         warmup_service = WarmupService(rock_config.warmup)
@@ -138,7 +138,7 @@ async def lifespan(app: FastAPI):
             logger.info("Scheduler thread skipped on non-primary pod")
 
     else:
-        sandbox_manager = SandboxProxyService(rock_config=rock_config, meta_repo=meta_repo)
+        sandbox_manager = SandboxProxyService(rock_config=rock_config, meta_store=meta_store)
         set_sandbox_proxy_service(sandbox_manager)
 
     logger.info("rock-admin start")

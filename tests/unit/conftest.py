@@ -19,7 +19,7 @@ from rock.sandbox.operator.k8s.operator import K8sOperator
 from rock.sandbox.operator.k8s.template_loader import K8sTemplateLoader
 from rock.sandbox.operator.ray import RayOperator
 from rock.sandbox.sandbox_manager import SandboxManager
-from rock.sandbox.sandbox_repository import SandboxRepository
+from rock.sandbox.sandbox_meta_store import SandboxMetaStore
 from rock.sandbox.service.sandbox_proxy_service import SandboxProxyService
 from rock.utils.providers.redis_provider import RedisProvider
 
@@ -83,10 +83,10 @@ def ray_operator(ray_service, runtime_config):
 async def sandbox_manager(
     rock_config: RockConfig, redis_provider: RedisProvider, ray_init_shutdown, ray_service, ray_operator
 ):
-    meta_repo = SandboxRepository(redis_provider=redis_provider)
+    meta_store = SandboxMetaStore(redis_provider=redis_provider)
     sandbox_manager = SandboxManager(
         rock_config,
-        meta_repo=meta_repo,
+        meta_store=meta_store,
         ray_namespace=rock_config.ray.namespace,
         ray_service=ray_service,
         enable_runtime_auto_clear=rock_config.runtime.enable_auto_clear,
@@ -97,8 +97,8 @@ async def sandbox_manager(
 
 @pytest.fixture
 async def sandbox_proxy_service(rock_config: RockConfig, redis_provider: RedisProvider):
-    meta_repo = SandboxRepository(redis_provider=redis_provider)
-    sandbox_proxy_service = SandboxProxyService(rock_config, meta_repo=meta_repo)
+    meta_store = SandboxMetaStore(redis_provider=redis_provider)
+    sandbox_proxy_service = SandboxProxyService(rock_config, meta_store=meta_store)
     return sandbox_proxy_service
 
 

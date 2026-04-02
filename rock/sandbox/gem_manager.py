@@ -18,13 +18,13 @@ from rock.config import RockConfig
 from rock.deployments.config import DockerDeploymentConfig
 from rock.sandbox.sandbox_actor import SandboxActor
 from rock.sandbox.sandbox_manager import SandboxManager
-from rock.sandbox.sandbox_repository import SandboxRepository
+from rock.sandbox.sandbox_meta_store import SandboxMetaStore
 
 class GemManager(SandboxManager):
     def __init__(
         self,
         rock_config: RockConfig,
-        meta_repo: SandboxRepository | None = None,
+        meta_store: SandboxMetaStore | None = None,
         ray_namespace: str = env_vars.ROCK_RAY_NAMESPACE,
         ray_service: RayService | None = None,
         enable_runtime_auto_clear: bool = False,
@@ -32,7 +32,7 @@ class GemManager(SandboxManager):
     ):
         super().__init__(
             rock_config,
-            meta_repo=meta_repo,
+            meta_store=meta_store,
             ray_namespace=ray_namespace,
             ray_service=ray_service,
             enable_runtime_auto_clear=enable_runtime_auto_clear,

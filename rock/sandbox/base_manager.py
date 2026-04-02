@@ -11,7 +11,7 @@ from rock.config import RockConfig
 from rock.deployments.manager import DeploymentManager
 from rock.logger import init_logger
 from rock.utils import get_executor
-from rock.sandbox.sandbox_repository import SandboxRepository
+from rock.sandbox.sandbox_meta_store import SandboxMetaStore
 
 logger = init_logger(__name__)
 
@@ -23,12 +23,12 @@ class BaseManager:
     def __init__(
         self,
         rock_config: RockConfig,
-        meta_repo: SandboxRepository | None = None,
+        meta_store: SandboxMetaStore | None = None,
         enable_runtime_auto_clear: bool = False,
     ):
         self.rock_config = rock_config
         self._executor = get_executor()
-        self._meta_repo = meta_repo
+        self._meta_store = meta_store
         self.metrics_monitor = MetricsMonitor.create(
             export_interval_millis=20_000,
             metrics_endpoint=rock_config.runtime.metrics_endpoint,
@@ -89,7 +89,7 @@ class BaseManager:
     async def _collect_and_report_metrics_internal(self):
         """Collect and report metrics for all sandboxes"""
         overall_start = time.perf_counter()
-        if not self._meta_repo:
+        if not self._meta_store:
             return
         await self._report_system_resource_metrics()
 
@@ -130,9 +130,9 @@ class BaseManager:
     async def _collect_sandbox_meta(self) -> tuple[int, dict[str, dict[str, str]]]:
         meta: dict = {}
         cnt = 0
-        if not self._meta_repo:
+        if not self._meta_store:
             return cnt, meta
-        async for sandbox_id in self._meta_repo.iter_alive_sandbox_ids():
+        async for sandbox_id in self._meta_store.iter_alive_sandbox_ids():
             cnt += 1
             image = self._sandbox_meta.get(sandbox_id, {}).get("image", "default")
             meta[sandbox_id] = {"image": image}

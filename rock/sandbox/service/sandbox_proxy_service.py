@@ -38,7 +38,7 @@ from rock.deployments.constants import Port
 from rock.deployments.status import ServiceStatus
 from rock.common.port_validation import validate_port_forward_port
 from rock.logger import init_logger
-from rock.sandbox.sandbox_repository import SandboxRepository
+from rock.sandbox.sandbox_meta_store import SandboxMetaStore
 from rock.sdk.common.exceptions import BadRequestRockError
 from rock.utils import EAGLE_EYE_TRACE_ID, trace_id_ctx_var
 
@@ -46,12 +46,12 @@ logger = init_logger(__name__)
 
 
 class SandboxProxyService:
-    _meta_repo: SandboxRepository = None
+    _meta_store: SandboxMetaStore = None
     _httpx_client = None
 
-    def __init__(self, rock_config: RockConfig, meta_repo: SandboxRepository | None = None):
+    def __init__(self, rock_config: RockConfig, meta_store: SandboxMetaStore | None = None):
         self._rock_config = rock_config
-        self._meta_repo = meta_repo
+        self._meta_store = meta_store
         self.metrics_monitor = MetricsMonitor.create(
             export_interval_millis=20_000,
             metrics_endpoint=rock_config.runtime.metrics_endpoint,
@@ -160,9 +160,11 @@ class SandboxProxyService:
         return CommandResponse(**response)
 
     @monitor_sandbox_operation()
-    async def batch_get_sandbox_status(self, sandbox_ids: list[str]) -> list[SandboxStatusResponse]:
-        if self._meta_repo is None:
-            logger.info("batch_get_sandbox_status, meta_repo is None, return empty")
+    async def batch_get_sandbox_status(
+        self, sandbox_ids: list[str], use_legacy_states: bool = True
+    ) -> list[SandboxStatusResponse]:
+        if self._meta_store is None:
+            logger.info("batch_get_sandbox_status, meta_store is None, return empty")
             return []
         if sandbox_ids is None:
             raise BadRequestRockError(message="sandbox_ids is None")
@@ -172,17 +174,24 @@ class SandboxProxyService:
             )
         logger.info(f"batch_get_sandbox_status, sandbox_ids count is {len(sandbox_ids)}")
         results = []
-        sandbox_infos: list[SandboxInfo] = await self._meta_repo.batch_get(sandbox_ids)
+        sandbox_infos: list[SandboxInfo] = await self._meta_store.batch_get(sandbox_ids)
+        from rock.actions.sandbox.response import State
+
         for sandbox_info in sandbox_infos:
             if sandbox_info:
+                state = sandbox_info.get("state")
+                if use_legacy_states and state not in (State.RUNNING, State.PENDING):
+                    continue
                 results.append(SandboxStatusResponse.from_sandbox_info(sandbox_info))
         logger.info(f"batch_get_sandbox_status succ, result count is {len(results)}")
         return results
 
     @monitor_sandbox_operation()
-    async def list_sandboxes(self, query_params: SandboxQueryParams) -> SandboxListResponse:
-        if self._meta_repo is None:
-            logger.warning("meta_repo is not available, list_sandboxes returning empty result")
+    async def list_sandboxes(
+        self, query_params: SandboxQueryParams, use_legacy_states: bool = True
+    ) -> SandboxListResponse:
+        if self._meta_store is None:
+            logger.warning("meta_store is not available, list_sandboxes returning empty result")
             return SandboxListResponse()
         page = int(query_params.pop("page", "1"))
         page_size = int(query_params.pop("page_size", "500"))
@@ -192,7 +201,7 @@ class SandboxProxyService:
             raise BadRequestRockError(f"page_size exceeds maximum {self._batch_get_status_max_count}")
         logger.info(f"list sandboxes with filters: {query_params}, page: {page}, page_size: {page_size}")
         try:
-            all_sandbox_data = await self.list_all_sandboxes_by_query_params(query_params)
+            all_sandbox_data = await self.list_all_sandboxes_by_query_params(query_params, use_legacy_states)
             total = len(all_sandbox_data)
             start_index = (page - 1) * page_size
             end_index = start_index + page_size
@@ -582,7 +591,7 @@ class SandboxProxyService:
             logger.info(f"Connection closed in {direction}: {e}")
 
     async def get_service_status(self, sandbox_id: str):
-        sandbox_info = await self._meta_repo.get(sandbox_id) if self._meta_repo else None
+        sandbox_info = await self._meta_store.get(sandbox_id) if self._meta_store else None
         if not sandbox_info or sandbox_info.get("host_ip") is None:
             raise Exception(f"sandbox {sandbox_id} not started")
         return [sandbox_info]
@@ -712,23 +721,30 @@ class SandboxProxyService:
             logger.error(f"Error forwarding message {direction}: {e}")
 
     async def _update_expire_time(self, sandbox_id):
-        if self._meta_repo:
-            await self._meta_repo.refresh_timeout(sandbox_id)
+        if self._meta_store:
+            await self._meta_store.refresh_timeout(sandbox_id)
 
-    async def list_all_sandboxes_by_query_params(self, query_params: SandboxQueryParams):
+    async def list_all_sandboxes_by_query_params(
+        self, query_params: SandboxQueryParams, use_legacy_states: bool = True
+    ):
         all_ids = []
-        async for sandbox_id in self._meta_repo.iter_alive_sandbox_ids():
+        async for sandbox_id in self._meta_store.iter_alive_sandbox_ids():
             all_ids.append(sandbox_id)
         if not all_ids:
             return []
 
         all_sandbox_data = []
         batch_size = self._batch_get_status_max_count
+        from rock.actions.sandbox.response import State
+
         for i in range(0, len(all_ids), batch_size):
             batch_ids = all_ids[i : i + batch_size]
-            sandbox_infos_list = await self._meta_repo.batch_get(batch_ids)
+            sandbox_infos_list = await self._meta_store.batch_get(batch_ids)
             for sandbox_info in sandbox_infos_list:
                 if not sandbox_info:
+                    continue
+                state = sandbox_info.get("state")
+                if use_legacy_states and state not in (State.RUNNING, State.PENDING):
                     continue
                 if self._matches_query_params(sandbox_info, query_params):
                     all_sandbox_data.append(SandboxListStatusResponse.from_sandbox_info(sandbox_info))

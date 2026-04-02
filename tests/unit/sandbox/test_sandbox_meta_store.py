@@ -1,4 +1,4 @@
-"""Tests for SandboxRepository - Redis + DB dual-write coordinator."""
+"""Tests for SandboxMetaStore - Redis + DB dual-write coordinator."""
 
 import asyncio
 import time
@@ -12,7 +12,7 @@ from rock.admin.core.db_provider import DatabaseProvider
 from rock.admin.core.redis_key import ALIVE_PREFIX, alive_sandbox_key, timeout_sandbox_key
 from rock.admin.core.sandbox_table import SandboxTable
 from rock.config import DatabaseConfig
-from rock.sandbox.sandbox_repository import SandboxRepository
+from rock.sandbox.sandbox_meta_store import SandboxMetaStore
 from rock.utils.providers.redis_provider import RedisProvider
 
 # ---------------------------------------------------------------------------
@@ -48,22 +48,22 @@ async def db_memory():
 
 @pytest.fixture
 def repo(redis, db):
-    return SandboxRepository(redis_provider=redis, sandbox_table=db)
+    return SandboxMetaStore(redis_provider=redis, sandbox_table=db)
 
 
 @pytest.fixture
 def repo_no_db(redis):
-    return SandboxRepository(redis_provider=redis, sandbox_table=None)
+    return SandboxMetaStore(redis_provider=redis, sandbox_table=None)
 
 
 @pytest.fixture
 def repo_no_redis(db):
-    return SandboxRepository(redis_provider=None, sandbox_table=db)
+    return SandboxMetaStore(redis_provider=None, sandbox_table=db)
 
 
 @pytest.fixture
 def repo_with_memory_db(redis, db_memory):
-    return SandboxRepository(redis_provider=redis, sandbox_table=db_memory)
+    return SandboxMetaStore(redis_provider=redis, sandbox_table=db_memory)
 
 
 # ---------------------------------------------------------------------------
@@ -517,7 +517,7 @@ async def real_db(pg_container):
 
 @pytest.fixture
 def docker_repo(real_redis, real_db):
-    return SandboxRepository(redis_provider=real_redis, sandbox_table=real_db)
+    return SandboxMetaStore(redis_provider=real_redis, sandbox_table=real_db)
 
 
 # ---------------------------------------------------------------------------
@@ -527,8 +527,8 @@ def docker_repo(real_redis, real_db):
 
 @pytest.mark.need_docker
 @pytest.mark.need_database
-class TestSandboxRepositoryWithDocker:
-    """SandboxRepository verified against real Redis Stack + PostgreSQL.
+class TestSandboxMetaStoreWithDocker:
+    """SandboxMetaStore verified against real Redis Stack + PostgreSQL.
 
     Uses unique sandbox IDs per test to avoid cross-test pollution across
     the shared session-scoped containers.
