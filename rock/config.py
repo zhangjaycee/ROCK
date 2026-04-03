@@ -159,6 +159,10 @@ class RuntimeConfig:
     use_standard_spec_only: bool = False
     metrics_endpoint: str = ""
     user_defined_tags: dict = field(default_factory=dict)
+    sandbox_limit_disk_rootfs: str | None = None
+    """Default rootfs quota per container. None means no limit. Can be overridden by nacos key 'default_limit_disk'."""
+    sandbox_limit_disk_log: str | None = None
+    """Default log-dir quota per container. None means no limit. Can be overridden by nacos key 'default_log_dir_quota'."""
 
     def __post_init__(self) -> None:
         # Convert dict to StandardSpec if needed
