@@ -11,6 +11,8 @@ class SandboxStartResponse(SandboxResponse):
     host_ip: str | None = None
     cpus: float | None = None
     memory: str | None = None
+    limit_disk_rootfs: str | None = None
+    limit_disk_log: str | None = None
 
 
 # TODO: inherit from SandboxStartResponse
@@ -30,6 +32,8 @@ class SandboxStatusResponse(BaseModel):
     namespace: str | None = None
     cpus: float | None = None
     memory: str | None = None
+    limit_disk_rootfs: str | None = None
+    limit_disk_log: str | None = None
 
     @classmethod
     def from_sandbox_info(cls, sandbox_info: "SandboxInfo") -> "SandboxStatusResponse":
@@ -46,6 +50,8 @@ class SandboxStatusResponse(BaseModel):
             namespace=sandbox_info.get("namespace"),
             cpus=sandbox_info.get("cpus"),
             memory=sandbox_info.get("memory"),
+            limit_disk_rootfs=sandbox_info.get("limit_disk_rootfs"),
+            limit_disk_log=sandbox_info.get("limit_disk_log"),
         )
 
 
