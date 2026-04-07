@@ -18,6 +18,7 @@ class TestSandboxTableWithSQLite:
     async def db(self):
         provider = DatabaseProvider(db_config=DatabaseConfig(url="sqlite:///:memory:"))
         await provider.init()
+        await provider.create_tables()
         table = SandboxTable(provider)
         yield table
         await provider.close()
@@ -107,6 +108,7 @@ class TestSandboxTableWithPostgres:
         """Create a SandboxTable connected to the test PostgreSQL container."""
         provider = DatabaseProvider(db_config=DatabaseConfig(url=pg_container["url"]))
         await provider.init()
+        await provider.create_tables()
         table = SandboxTable(provider)
         yield table
         await provider.close()

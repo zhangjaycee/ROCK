@@ -85,6 +85,7 @@ def ray_operator(ray_service, runtime_config):
 async def _memory_sandbox_table():
     provider = DatabaseProvider(db_config=DatabaseConfig(url="sqlite+aiosqlite:///:memory:"))
     await provider.init()
+    await provider.create_tables()
     table = SandboxTable(provider)
     yield table
     await provider.close()

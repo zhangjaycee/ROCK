@@ -32,6 +32,7 @@ async def redis():
 async def db(tmp_path):
     provider = DatabaseProvider(db_config=DatabaseConfig(url=f"sqlite:///{tmp_path / 'test.db'}"))
     await provider.init()
+    await provider.create_tables()
     table = SandboxTable(provider)
     yield table
     await provider.close()
@@ -41,6 +42,7 @@ async def db(tmp_path):
 async def db_memory():
     provider = DatabaseProvider(db_config=DatabaseConfig(url="sqlite:///:memory:"))
     await provider.init()
+    await provider.create_tables()
     table = SandboxTable(provider)
     yield table
     await provider.close()
@@ -383,6 +385,7 @@ async def real_redis(redis_container):
 async def real_db(pg_container):
     provider = DatabaseProvider(db_config=DatabaseConfig(url=pg_container["url"]))
     await provider.init()
+    await provider.create_tables()
     table = SandboxTable(provider)
     yield table
     await provider.close()

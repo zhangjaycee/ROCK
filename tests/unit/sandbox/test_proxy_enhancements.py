@@ -1064,6 +1064,7 @@ async def _redis():
 async def _db():
     provider = DatabaseProvider(db_config=DatabaseConfig(url="sqlite+aiosqlite:///:memory:"))
     await provider.init()
+    await provider.create_tables()
     table = SandboxTable(provider)
     yield table
     await provider.close()

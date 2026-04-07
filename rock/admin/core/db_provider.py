@@ -32,8 +32,13 @@ class DatabaseProvider:
         return self._engine
 
     async def init(self) -> None:
-        """Create the async engine and ensure tables exist."""
+        """Create the async engine."""
         self._engine = create_async_engine(self._url, echo=False)
+
+    async def create_tables(self) -> None:
+        """Create all tables defined in Base.metadata (idempotent)."""
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
     async def close(self) -> None:
         """Dispose of the engine and release all connections."""
