@@ -6,6 +6,7 @@ import json
 import time
 import traceback
 import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
@@ -20,7 +21,26 @@ from rock.rocklet.local_api import local_router
 from rock.utils import EAGLE_EYE_TRACE_ID, REQUEST_TIMEOUT_SECONDS, sandbox_id_ctx_var, trace_id_ctx_var
 
 logger = init_logger("rocklet.server")
-app = FastAPI()
+
+_enable_monitor: bool = False
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if _enable_monitor:
+        from rock.rocklet.monitor import WorkerMonitorService
+        monitor = WorkerMonitorService()
+        await monitor.start()
+        logger.info("WorkerMonitorService started")
+    else:
+        monitor = None
+    yield
+    if monitor is not None:
+        monitor.stop()
+        logger.info("WorkerMonitorService stopped")
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.include_router(local_router, tags=["local"])
 
@@ -121,8 +141,18 @@ def main():
     parser = argparse.ArgumentParser(description="Run the ROCKLET server")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind the server to")
     parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
+    parser.add_argument(
+        "--enable-monitor",
+        action="store_true",
+        default=False,
+        help="Enable background worker-node resource monitoring (for worker nodes only)",
+    )
 
     args = parser.parse_args(remaining_args)
+
+    global _enable_monitor
+    _enable_monitor = args.enable_monitor
+
     uvicorn.run(app, host=args.host, port=args.port, access_log=False)
 
 
