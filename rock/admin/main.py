@@ -75,6 +75,8 @@ async def lifespan(app: FastAPI):
         logger.info("database.url is not configured, falling back to SQLite in-memory")
     db_provider = DatabaseProvider(db_config=DatabaseConfig(url=db_url))
     await db_provider.init()
+    if not rock_config.database.url:
+        await db_provider.create_tables()
     sandbox_table = SandboxTable(db_provider)
 
     from rock.sandbox.sandbox_meta_store import SandboxMetaStore
