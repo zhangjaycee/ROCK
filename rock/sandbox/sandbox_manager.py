@@ -224,6 +224,8 @@ class SandboxManager(BaseManager):
     async def get_status(self, sandbox_id) -> SandboxStatusResponse:
         sandbox_info: SandboxInfo = await self._operator.get_status(sandbox_id=sandbox_id)
         is_alive = sandbox_info.get("state") == State.RUNNING
+        if sandbox_info.get("state") == State.STOPPED:
+            raise BadRequestRockError(f"Sandbox {sandbox_id} is already stopped")
         self._update_sandbox_alive_info(sandbox_info, is_alive)
         if self._meta_store:
             current = await self._meta_store.get(sandbox_id)
