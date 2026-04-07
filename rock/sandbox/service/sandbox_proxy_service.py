@@ -48,10 +48,9 @@ logger = init_logger(__name__)
 
 
 class SandboxProxyService:
-    _meta_store: SandboxMetaStore = None
     _httpx_client = None
 
-    def __init__(self, rock_config: RockConfig, meta_store: SandboxMetaStore | None = None):
+    def __init__(self, rock_config: RockConfig, meta_store: SandboxMetaStore):
         self._rock_config = rock_config
         self._meta_store = meta_store
         self.metrics_monitor = MetricsMonitor.create(
@@ -165,9 +164,6 @@ class SandboxProxyService:
     async def batch_get_sandbox_status(
         self, sandbox_ids: list[str]
     ) -> list[SandboxStatusResponse]:
-        if self._meta_store is None:
-            logger.info("batch_get_sandbox_status, meta_store is None, return empty")
-            return []
         if sandbox_ids is None:
             raise BadRequestRockError(message="sandbox_ids is None")
         if len(sandbox_ids) > self._batch_get_status_max_count:
@@ -189,9 +185,6 @@ class SandboxProxyService:
     async def list_sandboxes(
         self, query_params: SandboxQueryParams
     ) -> SandboxListResponse:
-        if self._meta_store is None:
-            logger.warning("meta_store is not available, list_sandboxes returning empty result")
-            return SandboxListResponse()
         page = int(query_params.pop("page", "1"))
         page_size = int(query_params.pop("page_size", "500"))
         if page < 1 or page_size < 1:
@@ -590,7 +583,7 @@ class SandboxProxyService:
             logger.info(f"Connection closed in {direction}: {e}")
 
     async def get_service_status(self, sandbox_id: str):
-        sandbox_info = await self._meta_store.get(sandbox_id) if self._meta_store else None
+        sandbox_info = await self._meta_store.get(sandbox_id)
         if not sandbox_info or sandbox_info.get("host_ip") is None:
             raise Exception(f"sandbox {sandbox_id} not started")
         return [sandbox_info]
@@ -720,8 +713,6 @@ class SandboxProxyService:
             logger.error(f"Error forwarding message {direction}: {e}")
 
     async def _update_expire_time(self, sandbox_id):
-        if not self._meta_store:
-            return
         timeout_info = await self._meta_store.get_timeout(sandbox_id)
         if timeout_info is None:
             return

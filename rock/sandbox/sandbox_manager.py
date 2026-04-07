@@ -52,7 +52,7 @@ class SandboxManager(BaseManager):
     def __init__(
         self,
         rock_config: RockConfig,
-        meta_store: SandboxMetaStore | None = None,
+        meta_store: SandboxMetaStore,
         ray_namespace: str = env_vars.ROCK_RAY_NAMESPACE,
         ray_service: RayService | None = None,
         enable_runtime_auto_clear: bool = False,
@@ -82,7 +82,7 @@ class SandboxManager(BaseManager):
     async def _check_sandbox_exists_in_redis(self, config: DeploymentConfig):
         if isinstance(config, DockerDeploymentConfig) and config.container_name:
             sandbox_id = config.container_name
-            if self._meta_store and await self._meta_store.exists(sandbox_id):
+            if await self._meta_store.exists(sandbox_id):
                 raise BadRequestRockError(f"Sandbox {sandbox_id} already exists")
 
     def _setup_sandbox_actor_metadata(self, sandbox_actor: SandboxActor, user_info: UserInfo) -> None:
@@ -127,14 +127,13 @@ class SandboxManager(BaseManager):
             docker_deployment_config.memory = self.rock_config.runtime.standard_spec.memory
         sandbox_info: SandboxInfo = await self._operator.submit(docker_deployment_config, user_info)
         await self._build_sandbox_info_metadata(sandbox_info, user_info, cluster_info)
-        if self._meta_store:
-            timeout_info = SandboxTimeoutHelper.make_timeout_info(docker_deployment_config.auto_clear_time)
-            await self._meta_store.create(
-                sandbox_id,
-                sandbox_info,
-                timeout_info=timeout_info,
-                deployment_config=docker_deployment_config,
-            )
+        timeout_info = SandboxTimeoutHelper.make_timeout_info(docker_deployment_config.auto_clear_time)
+        await self._meta_store.create(
+            sandbox_id,
+            sandbox_info,
+            timeout_info=timeout_info,
+            deployment_config=docker_deployment_config,
+        )
         return SandboxStartResponse(
             sandbox_id=sandbox_id,
             host_name=sandbox_info.get("host_name"),
@@ -171,7 +170,7 @@ class SandboxManager(BaseManager):
     @monitor_sandbox_operation()
     async def stop(self, sandbox_id):
         logger.info(f"stop sandbox {sandbox_id}")
-        sandbox_info: SandboxInfo | None = await self._meta_store.get(sandbox_id) if self._meta_store else None
+        sandbox_info: SandboxInfo | None = await self._meta_store.get(sandbox_id)
         if sandbox_info is None:
             sandbox_info = {}
         sandbox_info["state"] = State.STOPPED
@@ -182,24 +181,21 @@ class SandboxManager(BaseManager):
             await self._operator.stop(sandbox_id)
         except ValueError as e:
             logger.error(f"ray get actor, actor {sandbox_id} not exist", exc_info=e)
-            if self._meta_store:
-                await self._meta_store.archive(sandbox_id, sandbox_info)
+            await self._meta_store.archive(sandbox_id, sandbox_info)
             return
         try:
             self._sandbox_meta.pop(sandbox_id)
         except KeyError:
             logger.debug(f"{sandbox_id} key not found")
         logger.info(f"sandbox {sandbox_id} stopped")
-        if self._meta_store:
-            await self._meta_store.archive(sandbox_id, sandbox_info)
+        await self._meta_store.archive(sandbox_id, sandbox_info)
 
     async def get_mount(self, sandbox_id):
         async with self._ray_service.get_ray_rwlock().read_lock():
             actor_name = self.deployment_manager.get_actor_name(sandbox_id)
             sandbox_actor = await self._ray_service.async_ray_get_actor(actor_name, self._ray_namespace)
             if sandbox_actor is None:
-                if self._meta_store:
-                    await self._meta_store.archive(sandbox_id, {})
+                await self._meta_store.archive(sandbox_id, {})
                 raise Exception(f"sandbox {sandbox_id} not found to get mount")
             result = await self._ray_service.async_ray_get(sandbox_actor.get_mount.remote())
             logger.info(f"get_mount: {result}")
@@ -212,8 +208,7 @@ class SandboxManager(BaseManager):
             actor_name = self.deployment_manager.get_actor_name(sandbox_id)
             sandbox_actor = await self._ray_service.async_ray_get_actor(actor_name, self._ray_namespace)
             if sandbox_actor is None:
-                if self._meta_store:
-                    await self._meta_store.archive(sandbox_id, {})
+                await self._meta_store.archive(sandbox_id, {})
                 raise Exception(f"sandbox {sandbox_id} not found to commit")
             logger.info(f"begin to commit {sandbox_id} to {image_tag}")
             result = await self._ray_service.async_ray_get(sandbox_actor.commit.remote(image_tag, username, password))
@@ -227,11 +222,10 @@ class SandboxManager(BaseManager):
         if sandbox_info.get("state") == State.STOPPED:
             raise BadRequestRockError(f"Sandbox {sandbox_id} is already stopped")
         self._update_sandbox_alive_info(sandbox_info, is_alive)
-        if self._meta_store:
-            current = await self._meta_store.get(sandbox_id)
-            if current is None or current.get("state") != sandbox_info.get("state"):
-                await self._meta_store.update(sandbox_id, sandbox_info)
-            await self._refresh_timeout(sandbox_id)
+        current = await self._meta_store.get(sandbox_id)
+        if current is None or current.get("state") != sandbox_info.get("state"):
+            await self._meta_store.update(sandbox_id, sandbox_info)
+        await self._refresh_timeout(sandbox_id)
         return SandboxStatusResponse(
             sandbox_id=sandbox_id,
             status=sandbox_info.get("phases"),
@@ -251,7 +245,7 @@ class SandboxManager(BaseManager):
         )
 
     async def build_sandbox_info_from_redis(self, sandbox_id: str, deployment_info: SandboxInfo) -> SandboxInfo | None:
-        sandbox_info_from_store = await self._meta_store.get(sandbox_id) if self._meta_store else None
+        sandbox_info_from_store = await self._meta_store.get(sandbox_id)
         if sandbox_info_from_store:
             sandbox_info = sandbox_info_from_store
             remote_info = {
@@ -303,8 +297,6 @@ class SandboxManager(BaseManager):
         return await self._proxy_service.upload(file, target_path, sandbox_id)
 
     async def _refresh_timeout(self, sandbox_id: str) -> None:
-        if not self._meta_store:
-            return
         timeout_info = await self._meta_store.get_timeout(sandbox_id)
         if timeout_info is None:
             logger.warning("refresh_timeout: timeout key not found for sandbox_id=%s", sandbox_id)
@@ -316,8 +308,6 @@ class SandboxManager(BaseManager):
         await self._meta_store.update_timeout(sandbox_id, new_timeout)
 
     async def _is_expired(self, sandbox_id: str) -> bool:
-        if not self._meta_store:
-            return False
         timeout_info = await self._meta_store.get_timeout(sandbox_id)
         if timeout_info is None:
             logger.warning("is_expired: timeout key not found for sandbox_id=%s", sandbox_id)
@@ -334,8 +324,6 @@ class SandboxManager(BaseManager):
             return False
 
     async def _check_job_background(self):
-        if not self._meta_store:
-            return
         logger.debug("check job background")
         async for sandbox_id in self._meta_store.iter_alive_sandbox_ids():
             try:
