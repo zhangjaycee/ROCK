@@ -486,6 +486,7 @@ class DockerDeployment(AbstractDeployment):
             ]
 
         env_arg.extend(["-e", f"ROCK_TIME_ZONE={env_vars.ROCK_TIME_ZONE}"])
+        volume_args.extend(self._prepare_timezone_mount())
 
         # Kata DinD: prepare disk image and add volume mount + env var
         if self._config.use_kata_runtime:
@@ -538,6 +539,14 @@ class DockerDeployment(AbstractDeployment):
             await self._wait_until_alive(timeout=self._config.startup_timeout)
         if self._config.enable_auto_clear:
             self._check_stop_task = asyncio.create_task(self._check_stop())
+
+    def _prepare_timezone_mount(self) -> list[str]:
+        tz = env_vars.ROCK_TIME_ZONE
+        localtime_src = f"/usr/share/zoneinfo/{tz}"
+        if os.path.isfile(localtime_src):
+            return ["-v", f"{localtime_src}:/etc/localtime:ro"]
+        logger.warning(f"Zoneinfo file not found: {localtime_src}, skipping /etc/localtime mount")
+        return []
 
     def _prepare_volume_mounts(self) -> list[str]:
         mount_configs = self._runtime_env.get_volume_mounts()
