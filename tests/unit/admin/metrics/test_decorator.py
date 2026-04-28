@@ -13,7 +13,6 @@ from rock.admin.metrics.decorator import (
 )
 from rock.admin.metrics.monitor import MetricsMonitor
 from rock.sandbox.sandbox_meta_store import SandboxMetaStore
-from rock.utils.providers import RedisProvider
 
 
 class SampleObject:
@@ -65,35 +64,23 @@ def test_extract_sandbox_id_prefers_container_name_over_sandbox_id():
     assert result == "container-name"
 
 
-@patch("rock.admin.metrics.decorator.alive_sandbox_key")
-def test_get_user_info_success(mock_alive_key):
-    mock_redis_provider = Mock(spec=RedisProvider)
+def test_get_user_info_success():
+    mock_meta_store = AsyncMock(spec=SandboxMetaStore)
+    mock_meta_store.get = AsyncMock(
+        return_value={"user_id": "user123", "experiment_id": "exp456", "namespace": "ns789"}
+    )
 
-    async def async_mock_return_value(*args, **kwargs):
-        return [{"user_id": "user123", "experiment_id": "exp456", "namespace": "ns789"}]
-
-    mock_alive_key.return_value = "alive:test-sandbox"
-    mock_redis_provider.json_get = AsyncMock(side_effect=async_mock_return_value)
-
-    # Run the async function in a blocking way
-    user_id, experiment_id, namespace = asyncio.run(_get_user_info(mock_redis_provider, "test-sandbox"))
+    user_id, experiment_id, namespace = asyncio.run(_get_user_info(mock_meta_store, "test-sandbox"))
     assert user_id == "user123"
     assert experiment_id == "exp456"
     assert namespace == "ns789"
 
 
-@patch("rock.admin.metrics.decorator.alive_sandbox_key")
-def test_get_user_info_no_data(mock_alive_key):
-    mock_redis_provider = Mock(spec=RedisProvider)
+def test_get_user_info_no_data():
+    mock_meta_store = AsyncMock(spec=SandboxMetaStore)
+    mock_meta_store.get = AsyncMock(return_value=None)
 
-    async def async_mock_return_value(*args, **kwargs):
-        return []
-
-    mock_alive_key.return_value = "alive:test-sandbox"
-    mock_redis_provider.json_get = AsyncMock(side_effect=async_mock_return_value)
-
-    # Run the async function in a blocking way
-    user_id, experiment_id, namespace = asyncio.run(_get_user_info(mock_redis_provider, "test-sandbox"))
+    user_id, experiment_id, namespace = asyncio.run(_get_user_info(mock_meta_store, "test-sandbox"))
     assert user_id == "default"
     assert experiment_id == "default"
     assert namespace == "default"
