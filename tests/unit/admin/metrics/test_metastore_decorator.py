@@ -46,7 +46,7 @@ class TestMonitorMetastoreOperation:
         result = await store.do_something()
 
         assert result == "ok"
-        attrs = {"operation": "do_something", "method": "do_something", "sandbox_id": "unknown"}
+        attrs = {"operation": "do_something"}
         monitor.record_counter_by_name.assert_any_call("meta_store.success", 1, attrs)
         monitor.record_counter_by_name.assert_any_call("meta_store.total", 1, attrs)
         monitor.record_gauge_by_name.assert_called_once()
@@ -61,7 +61,7 @@ class TestMonitorMetastoreOperation:
         with pytest.raises(ValueError, match="boom"):
             await store.do_fail()
 
-        error_attrs = {"operation": "do_fail", "method": "do_fail", "sandbox_id": "unknown", "error_type": "ValueError"}
+        error_attrs = {"operation": "do_fail", "error_type": "ValueError"}
         monitor.record_counter_by_name.assert_any_call("meta_store.failure", 1, error_attrs)
         monitor.record_counter_by_name.assert_any_call("meta_store.total", 1, error_attrs)
         monitor.record_gauge_by_name.assert_called_once()
@@ -90,49 +90,35 @@ class TestMonitorMetastoreOperation:
 
         await store.do_something()
 
-        attrs_db = {"operation": "do_something", "method": "do_something", "sandbox_id": "unknown"}
-        monitor.record_counter_by_name.assert_any_call("meta_store.db.success", 1, attrs_db)
-        monitor.record_counter_by_name.assert_any_call("meta_store.db.total", 1, attrs_db)
+        attrs = {"operation": "do_something"}
+        monitor.record_counter_by_name.assert_any_call("meta_store.db.success", 1, attrs)
+        monitor.record_counter_by_name.assert_any_call("meta_store.db.total", 1, attrs)
         call_args = monitor.record_gauge_by_name.call_args
         assert call_args[0][0] == "meta_store.db.rt"
 
-    async def test_sandbox_id_in_attributes_positional(self):
-        """sandbox_id is included when the method declares the parameter (positional)."""
+    async def test_attributes_do_not_contain_sandbox_id(self):
+        """Regression: sandbox_id was dropped from metastore attrs to avoid cardinality explosion."""
         monitor = _make_monitor()
         store = FakeStore(metrics_monitor=monitor)
 
-        result = await store.get("sbx-123")
+        await store.get("sbx-123")
 
-        assert result == "sbx-123"
-        attrs = {"operation": "get", "method": "get", "sandbox_id": "sbx-123"}
-        monitor.record_counter_by_name.assert_any_call("meta_store.success", 1, attrs)
+        for call in monitor.record_counter_by_name.call_args_list:
+            recorded_attrs = call[0][2]
+            assert "sandbox_id" not in recorded_attrs
+            assert "method" not in recorded_attrs
+        for call in monitor.record_gauge_by_name.call_args_list:
+            recorded_attrs = call[0][2]
+            assert "sandbox_id" not in recorded_attrs
+            assert "method" not in recorded_attrs
 
-    async def test_sandbox_id_unknown_when_keyword_only(self):
-        """sandbox_id passed as keyword is not extracted (consistent with monitor_sandbox_operation)."""
-        monitor = _make_monitor()
-        store = FakeStore(metrics_monitor=monitor)
-
-        await store.get(sandbox_id="sbx-kw")
-
-        attrs = {"operation": "get", "method": "get", "sandbox_id": "unknown"}
-        monitor.record_counter_by_name.assert_any_call("meta_store.success", 1, attrs)
-
-    async def test_sandbox_id_fallback_from_first_arg(self):
-        """Without sandbox_id param, _extract_sandbox_id falls back to args[0]."""
+    async def test_attributes_do_not_contain_method_field(self):
+        """Regression: the duplicate `method` label was removed (it equalled `operation`)."""
         monitor = _make_monitor()
         store = FakeStore(metrics_monitor=monitor)
 
         await store.list_by("state", "running")
 
-        attrs = {"operation": "list_by", "method": "list_by", "sandbox_id": "state"}
-        monitor.record_counter_by_name.assert_any_call("meta_store.success", 1, attrs)
-
-    async def test_sandbox_id_unknown_when_no_args(self):
-        """No args at all → sandbox_id defaults to 'unknown'."""
-        monitor = _make_monitor()
-        store = FakeStore(metrics_monitor=monitor)
-
-        await store.do_something()
-
-        attrs = {"operation": "do_something", "method": "do_something", "sandbox_id": "unknown"}
-        monitor.record_counter_by_name.assert_any_call("meta_store.success", 1, attrs)
+        for call in monitor.record_counter_by_name.call_args_list:
+            recorded_attrs = call[0][2]
+            assert recorded_attrs == {"operation": "list_by"}
