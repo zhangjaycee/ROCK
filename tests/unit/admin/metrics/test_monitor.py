@@ -167,7 +167,7 @@ def test_create_with_user_defined_tags(mock_env_vars, mock_instance_id, mock_uni
     assert monitor.base_attributes["role"] == "test"
 
 
-def _create_dev_monitor(metric_prefix: str = "") -> MetricsMonitor:
+def _create_dev_monitor() -> MetricsMonitor:
     """Create a real MetricsMonitor with env=dev (InMemoryMetricReader, no skip)."""
     return MetricsMonitor(
         host="127.0.0.1",
@@ -175,7 +175,6 @@ def _create_dev_monitor(metric_prefix: str = "") -> MetricsMonitor:
         pod="test-pod",
         env="dev",
         role="test",
-        metric_prefix=metric_prefix,
     )
 
 
@@ -220,10 +219,6 @@ class TestMetastoreMetricsRegistration:
         monitor.record_gauge_by_name(MetricsConstants.METASTORE_RT, 1.5, attrs)
         monitor.record_gauge_by_name(MetricsConstants.METASTORE_DB_RT, 0.8, attrs)
 
-    def test_metric_prefix_stored(self):
-        monitor = _create_dev_monitor(metric_prefix="meta_store")
-        assert monitor.metric_prefix == "meta_store"
-
     def test_end_to_end_record_does_not_raise(self):
         """Full round-trip: create real monitor, record metrics, no errors.
 
@@ -232,7 +227,7 @@ class TestMetastoreMetricsRegistration:
         record path completes without exceptions, which proves the counters
         and gauges are real OTel instruments (not None).
         """
-        monitor = _create_dev_monitor(metric_prefix="meta_store")
+        monitor = _create_dev_monitor()
         attrs = {"operation": "get", "method": "get"}
         # These would raise KeyError if names are unregistered,
         # or AttributeError if instruments are None.

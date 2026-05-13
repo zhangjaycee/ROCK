@@ -59,7 +59,7 @@ class TestMetaStoreMetrics:
     async def test_create_records_store_metrics(self, store, mock_monitor):
         await store.create(SANDBOX_ID, SANDBOX_INFO)
 
-        attrs = {"operation": "create", "method": "create", "sandbox_id": SANDBOX_ID}
+        attrs = {"operation": "create"}
         mock_monitor.record_counter_by_name.assert_any_call(f"{PREFIX}.success", 1, attrs)
         mock_monitor.record_counter_by_name.assert_any_call(f"{PREFIX}.total", 1, attrs)
         assert mock_monitor.record_gauge_by_name.called
@@ -73,7 +73,7 @@ class TestMetaStoreMetrics:
 
         await store.get(SANDBOX_ID)
 
-        attrs = {"operation": "get", "method": "get", "sandbox_id": SANDBOX_ID}
+        attrs = {"operation": "get"}
         mock_monitor.record_counter_by_name.assert_any_call(f"{PREFIX}.success", 1, attrs)
         mock_monitor.record_gauge_by_name.assert_called_once()
 
@@ -83,6 +83,6 @@ class TestMetaStoreMetrics:
         with pytest.raises(ConnectionError):
             await store.get(SANDBOX_ID)
 
-        error_attrs = {"operation": "get", "method": "get", "sandbox_id": SANDBOX_ID, "error_type": "ConnectionError"}
+        error_attrs = {"operation": "get", "error_type": "ConnectionError"}
         mock_monitor.record_counter_by_name.assert_any_call(f"{PREFIX}.failure", 1, error_attrs)
         mock_monitor.record_counter_by_name.assert_any_call(f"{PREFIX}.total", 1, error_attrs)
