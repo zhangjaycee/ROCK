@@ -1,7 +1,6 @@
 import time
 from collections import Counter as CollectionsCounter
 
-from opentelemetry import metrics
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.metrics import Counter, _Gauge
 from opentelemetry.sdk.metrics import MeterProvider
@@ -27,10 +26,8 @@ class MetricsMonitor:
         export_interval_millis: int = 10000,
         endpoint: str = "",
         user_defined_tags: dict = {},
-        metric_prefix: str = "",
     ):
         patch_view_instrument_match()
-        self.metric_prefix = metric_prefix
         self.user_defined_tags = user_defined_tags
         self._init_basic_attributes(host, port, pod, env, role)
         self.endpoint = endpoint or f"http://{self.host}:{self.port}/v1/metrics"
@@ -49,7 +46,6 @@ class MetricsMonitor:
         export_interval_millis: int = 20000,
         metrics_endpoint: str = "",
         user_defined_tags: dict = {},
-        metric_prefix: str = "",
     ) -> "MetricsMonitor":
         host, port = get_uniagent_endpoint()
         pod = get_instance_id()
@@ -65,7 +61,6 @@ class MetricsMonitor:
             export_interval_millis=export_interval_millis,
             endpoint=metrics_endpoint,
             user_defined_tags=user_defined_tags,
-            metric_prefix=metric_prefix,
         )
 
     def _register_metrics(self):
@@ -156,8 +151,7 @@ class MetricsMonitor:
                 export_interval_millis=export_interval_millis,
             )
         self.meter_provider = MeterProvider(metric_readers=[self.metric_reader])
-        metrics.set_meter_provider(self.meter_provider)
-        self.meter = metrics.get_meter(MetricsConstants.METRICS_METER_NAME)
+        self.meter = self.meter_provider.get_meter(MetricsConstants.METRICS_METER_NAME)
         logger.info("init telemetry success")
 
     def _wrap_exporter_with_logging(self):

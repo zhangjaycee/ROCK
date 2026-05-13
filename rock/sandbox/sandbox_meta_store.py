@@ -38,10 +38,12 @@ class SandboxMetaStore:
         self,
         redis_provider: RedisProvider,
         sandbox_table: SandboxTable,
+        metrics_monitor: MetricsMonitor,
     ) -> None:
         self._redis: RedisProvider = redis_provider
         self._db: SandboxTable = sandbox_table
-        self.metrics_monitor = MetricsMonitor.create(metric_prefix="meta_store")
+        self.metrics_monitor = metrics_monitor
+        self._metric_prefix = "meta_store"
 
     # ------------------------------------------------------------------
     # Public API

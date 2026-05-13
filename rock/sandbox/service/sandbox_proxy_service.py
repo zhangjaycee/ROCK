@@ -51,14 +51,10 @@ logger = init_logger(__name__)
 class SandboxProxyService:
     _httpx_client = None
 
-    def __init__(self, rock_config: RockConfig, meta_store: SandboxMetaStore):
+    def __init__(self, rock_config: RockConfig, meta_store: SandboxMetaStore, metrics_monitor: MetricsMonitor):
         self._rock_config = rock_config
         self._meta_store = meta_store
-        self.metrics_monitor = MetricsMonitor.create(
-            export_interval_millis=20_000,
-            metrics_endpoint=rock_config.runtime.metrics_endpoint,
-            user_defined_tags=rock_config.runtime.user_defined_tags,
-        )
+        self.metrics_monitor = metrics_monitor
         self.oss_config: OssConfig = rock_config.oss
         self.proxy_config: ProxyServiceConfig = rock_config.proxy_service
         logger.info(f"proxy config: {self.proxy_config}")

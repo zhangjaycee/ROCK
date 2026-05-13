@@ -36,9 +36,10 @@ class SandboxTable:
       including ``spec`` and ``status``.
     """
 
-    def __init__(self, db_provider: DatabaseProvider) -> None:
+    def __init__(self, db_provider: DatabaseProvider, metrics_monitor: MetricsMonitor | None = None) -> None:
         self._db = db_provider
-        self.metrics_monitor = MetricsMonitor.create(metric_prefix="meta_store.db")
+        self.metrics_monitor = metrics_monitor
+        self._metric_prefix = "meta_store.db"
 
     @monitor_metastore_operation
     async def create(

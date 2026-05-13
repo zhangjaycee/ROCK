@@ -17,6 +17,7 @@ from rock.actions.sandbox.sandbox_info import SandboxInfo
 from rock.admin.core.ray_service import RayService
 from rock.admin.metrics.billing import log_billing_info
 from rock.admin.metrics.decorator import monitor_sandbox_operation
+from rock.admin.metrics.monitor import MetricsMonitor
 from rock.admin.proto.request import ClusterInfo, UserInfo
 from rock.admin.proto.request import SandboxAction as Action
 from rock.admin.proto.request import SandboxCloseBashSessionRequest as CloseBashSessionRequest
@@ -55,17 +56,21 @@ class SandboxManager(BaseManager):
         ray_service: RayService | None = None,
         enable_runtime_auto_clear: bool = False,
         operator: AbstractOperator | None = None,
+        metrics_monitor: MetricsMonitor | None = None,
     ):
         super().__init__(
             rock_config,
             meta_store=meta_store,
             enable_runtime_auto_clear=enable_runtime_auto_clear,
+            metrics_monitor=metrics_monitor,
         )
         self._ray_service = ray_service
         self._ray_namespace = ray_namespace
         self._operator = operator
         self._aes_encrypter = AESEncryption()
-        self._proxy_service = SandboxProxyService(rock_config=rock_config, meta_store=meta_store)
+        self._proxy_service = SandboxProxyService(
+            rock_config=rock_config, meta_store=meta_store, metrics_monitor=metrics_monitor
+        )
         logger.info("sandbox service init success")
 
     async def refresh_aes_key(self):

@@ -20,6 +20,7 @@ from rock.admin.entrypoints.sandbox_api import sandbox_router, set_sandbox_manag
 from rock.admin.entrypoints.sandbox_proxy_api import sandbox_proxy_router, set_sandbox_proxy_service
 from rock.admin.entrypoints.warmup_api import set_warmup_service, warmup_router
 from rock.admin.gem.api import gem_router, set_env_service
+from rock.admin.metrics.monitor import MetricsMonitor
 from rock.admin.scheduler.scheduler import SchedulerThread
 from rock.config import DatabaseConfig, RockConfig, SchedulerConfig
 from rock.logger import init_logger
@@ -86,8 +87,15 @@ async def lifespan(app: FastAPI):
     await db_provider.init()
     if not rock_config.database.url:
         await db_provider.create_tables()
-    sandbox_table = SandboxTable(db_provider)
-    meta_store = SandboxMetaStore(redis_provider=redis_provider, sandbox_table=sandbox_table)
+    metrics_monitor = MetricsMonitor.create(
+        export_interval_millis=20_000,
+        metrics_endpoint=rock_config.runtime.metrics_endpoint,
+        user_defined_tags=rock_config.runtime.user_defined_tags,
+    )
+    sandbox_table = SandboxTable(db_provider, metrics_monitor=metrics_monitor)
+    meta_store = SandboxMetaStore(
+        redis_provider=redis_provider, sandbox_table=sandbox_table, metrics_monitor=metrics_monitor
+    )
 
     # init scheduler thread
     scheduler_thread = None
@@ -117,6 +125,7 @@ async def lifespan(app: FastAPI):
                 enable_runtime_auto_clear=True,
                 operator=operator,
                 meta_store=meta_store,
+                metrics_monitor=metrics_monitor,
             )
         else:
             sandbox_manager = GemManager(
@@ -126,6 +135,7 @@ async def lifespan(app: FastAPI):
                 enable_runtime_auto_clear=False,
                 operator=operator,
                 meta_store=meta_store,
+                metrics_monitor=metrics_monitor,
             )
         set_sandbox_manager(sandbox_manager)
         warmup_service = WarmupService(rock_config.warmup)
@@ -144,7 +154,9 @@ async def lifespan(app: FastAPI):
             logger.info("Scheduler thread skipped on non-primary pod")
 
     else:
-        sandbox_manager = SandboxProxyService(rock_config=rock_config, meta_store=meta_store)
+        sandbox_manager = SandboxProxyService(
+            rock_config=rock_config, meta_store=meta_store, metrics_monitor=metrics_monitor
+        )
         set_sandbox_proxy_service(sandbox_manager)
 
     logger.info("rock-admin start")

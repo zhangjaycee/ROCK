@@ -25,15 +25,12 @@ class BaseManager:
         rock_config: RockConfig,
         meta_store: SandboxMetaStore,
         enable_runtime_auto_clear: bool = False,
+        metrics_monitor: MetricsMonitor | None = None,
     ):
         self.rock_config = rock_config
         self._executor = get_executor()
         self._meta_store = meta_store
-        self.metrics_monitor = MetricsMonitor.create(
-            export_interval_millis=20_000,
-            metrics_endpoint=rock_config.runtime.metrics_endpoint,
-            user_defined_tags=rock_config.runtime.user_defined_tags,
-        )
+        self.metrics_monitor = metrics_monitor
         self._report_interval = 10
         self._check_job_interval = 180
         self._setup_scheduler()

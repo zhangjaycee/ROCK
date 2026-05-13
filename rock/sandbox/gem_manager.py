@@ -13,6 +13,7 @@ from rock.actions import (
     EnvStepResponse,
 )
 from rock.admin.core.ray_service import RayService
+from rock.admin.metrics.monitor import MetricsMonitor
 from rock.admin.proto.response import SandboxStartResponse, SandboxStatusResponse
 from rock.config import RockConfig
 from rock.deployments.config import DockerDeploymentConfig
@@ -30,6 +31,7 @@ class GemManager(SandboxManager):
         ray_service: RayService | None = None,
         enable_runtime_auto_clear: bool = False,
         operator=None,
+        metrics_monitor: MetricsMonitor | None = None,
     ):
         super().__init__(
             rock_config,
@@ -38,6 +40,7 @@ class GemManager(SandboxManager):
             ray_service=ray_service,
             enable_runtime_auto_clear=enable_runtime_auto_clear,
             operator=operator,
+            metrics_monitor=metrics_monitor,
         )
 
     async def env_make(self, env_id: str) -> EnvMakeResponse:

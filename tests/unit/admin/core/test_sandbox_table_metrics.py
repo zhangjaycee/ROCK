@@ -1,6 +1,6 @@
 """Tests for SandboxTable DB-layer metrics."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
@@ -27,14 +27,12 @@ PREFIX = "meta_store.db"
 def mock_monitor():
     monitor = Mock(spec=MetricsMonitor)
     monitor._should_skip.return_value = False
-    monitor.metric_prefix = PREFIX
     return monitor
 
 
 @pytest.fixture
 def table(db_provider, mock_monitor):
-    with patch("rock.admin.core.sandbox_table.MetricsMonitor.create", return_value=mock_monitor):
-        return SandboxTable(db_provider)
+    return SandboxTable(db_provider, metrics_monitor=mock_monitor)
 
 
 class TestSandboxTableMetrics:

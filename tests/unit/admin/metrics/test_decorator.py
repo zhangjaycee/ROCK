@@ -161,7 +161,9 @@ async def test_decorator_retrieves_user_info_from_meta_store(redis_provider, _me
     not self._redis_provider (which doesn't exist on SandboxManager/SandboxProxyService).
     Before the fix, user_id/experiment_id/namespace were always 'default'.
     """
-    meta_store = SandboxMetaStore(redis_provider=redis_provider, sandbox_table=_memory_sandbox_table)
+    meta_store = SandboxMetaStore(
+        redis_provider=redis_provider, sandbox_table=_memory_sandbox_table, metrics_monitor=None
+    )
 
     # Seed Redis with sandbox info containing user fields
     sandbox_id = "test-sandbox-123"

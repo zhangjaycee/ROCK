@@ -1,6 +1,6 @@
 """Tests for SandboxMetaStore metrics integration."""
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fakeredis import aioredis
@@ -29,10 +29,9 @@ PREFIX = "meta_store"
 DB_PREFIX = "meta_store.db"
 
 
-def _make_monitor(prefix=PREFIX):
+def _make_monitor():
     monitor = Mock(spec=MetricsMonitor)
     monitor._should_skip.return_value = False
-    monitor.metric_prefix = prefix
     return monitor
 
 
@@ -46,16 +45,14 @@ async def redis():
 
 @pytest.fixture
 def mock_monitor():
-    return _make_monitor(PREFIX)
+    return _make_monitor()
 
 
 @pytest.fixture
 def store(redis, db_provider, mock_monitor):
-    db_monitor = _make_monitor(DB_PREFIX)
-    with patch("rock.admin.core.sandbox_table.MetricsMonitor.create", return_value=db_monitor):
-        table = SandboxTable(db_provider)
-    with patch("rock.sandbox.sandbox_meta_store.MetricsMonitor.create", return_value=mock_monitor):
-        return SandboxMetaStore(redis_provider=redis, sandbox_table=table)
+    db_monitor = _make_monitor()
+    table = SandboxTable(db_provider, metrics_monitor=db_monitor)
+    return SandboxMetaStore(redis_provider=redis, sandbox_table=table, metrics_monitor=mock_monitor)
 
 
 class TestMetaStoreMetrics:
