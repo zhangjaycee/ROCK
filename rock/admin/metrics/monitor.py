@@ -1,3 +1,4 @@
+import time
 from collections import Counter as CollectionsCounter
 
 from opentelemetry import metrics
@@ -149,6 +150,7 @@ class MetricsMonitor:
             self.metric_reader = InMemoryMetricReader()
         else:
             self.otlp_exporter = OTLPMetricExporter(endpoint=self.endpoint)
+            self._wrap_exporter_with_logging()
             self.metric_reader = PeriodicExportingMetricReader(
                 self.otlp_exporter,
                 export_interval_millis=export_interval_millis,
@@ -157,6 +159,38 @@ class MetricsMonitor:
         metrics.set_meter_provider(self.meter_provider)
         self.meter = metrics.get_meter(MetricsConstants.METRICS_METER_NAME)
         logger.info("init telemetry success")
+
+    def _wrap_exporter_with_logging(self):
+        """Patch otlp_exporter.export to log data point count and duration.
+
+        Runs on the PeriodicExportingMetricReader's daemon thread, off the asyncio loop.
+        """
+        if not hasattr(self, "otlp_exporter") or not hasattr(self.otlp_exporter, "export"):
+            return
+        original_export = self.otlp_exporter.export
+        endpoint = self.endpoint
+
+        def export_with_logging(metrics_data, *args, **kwargs):
+            n_points = sum(
+                len(metric.data.data_points)
+                for rm in metrics_data.resource_metrics
+                for sm in rm.scope_metrics
+                for metric in sm.metrics
+                if hasattr(metric.data, "data_points")
+            )
+            t0 = time.perf_counter()
+            result = original_export(metrics_data, *args, **kwargs)
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            logger.info(
+                "OTLP export endpoint=%s data_points=%d duration_ms=%.1f result=%s",
+                endpoint,
+                n_points,
+                elapsed_ms,
+                result,
+            )
+            return result
+
+        self.otlp_exporter.export = export_with_logging
 
     def create_counter(self, name: str, description: str, unit: str = "1") -> Counter:
         """Create counter"""
