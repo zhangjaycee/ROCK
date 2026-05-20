@@ -35,6 +35,7 @@ from rock.utils import (
     StageTimer,
     find_free_port,
     get_executor,
+    refresh_docker_used_ports,
     release_port,
     sandbox_id_ctx_var,
     timeout,
@@ -127,9 +128,6 @@ class DockerDeployment(AbstractDeployment):
         if self._runtime is None:
             msg = "Runtime not started"
             raise RuntimeError(msg)
-        if self._container_process is None:
-            msg = "Container process not started"
-            raise RuntimeError(msg)
         if self._container_process.poll() is not None:
             msg = "Container process terminated."
             output = "stdout:\n" + self._container_process.stdout.read().decode()  # type: ignore
@@ -147,7 +145,6 @@ class DockerDeployment(AbstractDeployment):
             return
         except TimeoutError as e:
             logger.error("Runtime did not start within timeout. Here's the output from the container process.")
-            assert self._container_process is not None
             self._service_status.update_status(
                 phase_name="docker_run", status=Status.TIMEOUT, message="docker run timeout"
             )
@@ -674,6 +671,87 @@ class DockerDeployment(AbstractDeployment):
         if self._runtime:
             await loop.run_in_executor(stop_executor, self._stop)
 
+    async def restart(self):
+        """Restart an existing stopped container using docker start.
+
+        Precondition: caller (SandboxStateMachine) guarantees the container
+        is in a stopped/exited state. A nonexistent container surfaces via
+        `docker start` failing — see is_alive()'s poll-based detection.
+        """
+        executor = get_executor()
+        loop = asyncio.get_running_loop()
+
+        logger.info(f"Restarting container {self._container_name} with docker start")
+
+        # Reuse the same Popen-based attached start used by start(), so the
+        # restart path also produces a valid self._container_process. Without
+        # this, _stop() would skip its `if self._container_process is not None`
+        # branch and never call docker kill / cleanup.
+        self._container_process = await loop.run_in_executor(executor, self._docker_start)
+
+        # Recover the rocklet port from the container's port bindings if not set in config.
+        # When a new actor is created for restart, config.port may be None.
+        if self._config.port is None:
+            self._config.port = await loop.run_in_executor(executor, self._get_rocklet_port_from_inspect)
+        if self._config.port is None:
+            raise Exception(f"Cannot determine rocklet port for container {self._container_name}")
+
+        # Re-establish runtime connection
+        logger.info(f"Starting runtime at {self._config.port}")
+        self._runtime = RemoteSandboxRuntime.from_config(
+            RemoteSandboxRuntimeConfig(port=self._config.port, timeout=self._runtime_timeout)
+        )
+        self._runtime.set_executor(executor)
+
+        # Wait until container is alive
+        with StageTimer("startup_timing", f"[{self._container_name}] Wait until alive", logger):
+            await self._wait_until_alive(timeout=self._config.startup_timeout)
+
+        # Re-enable auto-clear if configured
+        if self._config.enable_auto_clear:
+            self._check_stop_task = asyncio.create_task(self._check_stop())
+
+        logger.info(f"Container {self._container_name} restarted successfully")
+
+    def _get_container_status(self) -> str:
+        """Get the current status of the container."""
+        try:
+            result = subprocess.run(
+                ["docker", "inspect", "--format={{.State.Status}}", self._container_name],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+            return "unknown"
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            logger.debug(f"Failed to get container status: {e}")
+            return "unknown"
+
+    def _get_rocklet_port_from_inspect(self) -> int | None:
+        """Read the host-side port mapped to the rocklet (container port 22555) from docker inspect."""
+        try:
+            result = subprocess.run(
+                [
+                    "docker",
+                    "inspect",
+                    "--format",
+                    '{{(index (index .HostConfig.PortBindings "22555/tcp") 0).HostPort}}',
+                    self._container_name,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                port_str = result.stdout.strip()
+                if port_str.isdigit():
+                    return int(port_str)
+        except Exception as e:
+            logger.warning(f"Failed to get rocklet port from inspect for {self._container_name}: {e}")
+        return None
+
     def _stop(self):
         """Stops the runtime."""
         if self._container_name in ENV_POOL:
@@ -784,6 +862,7 @@ class DockerDeployment(AbstractDeployment):
         return self._service_status
 
     async def do_port_mapping(self):
+        refresh_docker_used_ports()
         proxy_port = await find_free_port()
         self._service_status.add_port_mapping(Port.PROXY, proxy_port)
         ssh_port = await find_free_port()
