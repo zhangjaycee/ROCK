@@ -7,6 +7,7 @@ All DB operations are awaited for consistency.
 
 from __future__ import annotations
 
+import datetime
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
@@ -17,16 +18,25 @@ from rock.admin.core.sandbox_table import SandboxTable
 from rock.admin.metrics.decorator import monitor_metastore_operation
 from rock.admin.metrics.monitor import MetricsMonitor
 from rock.config import RockConfig
+from rock.logger import init_logger
+from rock.utils.providers.redis_provider import RedisProvider
 
 if TYPE_CHECKING:
     from rock.deployments.config import DockerDeploymentConfig
-from rock.logger import init_logger
-from rock.utils.providers.redis_provider import RedisProvider
 
 logger = init_logger(__name__)
 
 # States that indicate an active sandbox (not yet stopped/archived).
 _ACTIVE_STATES: list[str] = [State.RUNNING, State.PENDING]
+
+# Default ``auto_delete_seconds`` applied when a sandbox's spec snapshot has the
+# field missing or set to ``None``. Pre-delete-feature sandboxes were stored
+# before ``auto_delete_seconds`` had a "soft-delete after N seconds" meaning, so
+# their spec carries ``None`` (or no key at all). Without a default they would
+# never be auto-deleted and stay stopped forever. 7 days is a conservative
+# compromise: late enough for an operator to inspect a stopped sandbox, soon
+# enough that legacy records do not accumulate indefinitely.
+DEFAULT_AUTO_DELETE_SECONDS = 7 * 24 * 60 * 60
 
 
 class SandboxMetaStore:
@@ -179,3 +189,35 @@ class SandboxMetaStore:
     async def list_by(self, field: str, value: str | int | float | bool) -> list[SandboxInfo]:
         """Query sandboxes by *field* == *value* from the DB."""
         return await self._db.list_by(field, value)
+
+    async def iter_pending_delete(self, limit: int = 1000) -> AsyncIterator[str]:
+        """Yield ``sandbox_id`` of stopped sandboxes that are due for auto-delete.
+
+        Scans up to ``limit`` stopped rows from the DB and yields the ones where
+        ``stop_time + auto_delete_seconds <= now``. The per-call cap is what
+        bounds DB / RAM cost — not a time window — regardless of how many
+        stopped rows have accumulated.
+
+        ``spec.auto_delete_seconds`` falls back to ``DEFAULT_AUTO_DELETE_SECONDS``
+        when the key is missing or ``None`` (legacy sandboxes from before this
+        feature carry ``None`` in spec but should still be reaped).
+        """
+        rows = await self._db.list_by_in("state", [State.STOPPED.value], limit=limit)
+        now = datetime.datetime.now().astimezone()
+
+        for row in rows:
+            sandbox_id = row.get("sandbox_id")
+            stop_time = row.get("stop_time")
+            if sandbox_id is None or stop_time is None:
+                continue
+            spec = row.get("spec") or {}
+            auto_delete_seconds = spec.get("auto_delete_seconds")
+            if auto_delete_seconds is None:
+                auto_delete_seconds = DEFAULT_AUTO_DELETE_SECONDS
+            try:
+                stop_dt = datetime.datetime.fromisoformat(stop_time)
+                expire_dt = stop_dt + datetime.timedelta(seconds=int(auto_delete_seconds))
+            except (ValueError, TypeError):
+                continue
+            if expire_dt <= now:
+                yield sandbox_id

@@ -36,6 +36,7 @@ class BaseManager:
         )
         self._report_interval = 10
         self._check_job_interval = 180
+        self._delete_check_batch_size = 1000
         self._setup_scheduler()
         self.deployment_manager = DeploymentManager(rock_config, enable_runtime_auto_clear)
 
@@ -70,6 +71,12 @@ class BaseManager:
             trigger=IntervalTrigger(seconds=self._check_job_interval),
             id="job_check",
             name="Sandbox Job Check",
+        )
+        self.scheduler.add_job(
+            func=self._check_delete_background,
+            trigger=IntervalTrigger(seconds=self._check_job_interval),
+            id="delete_check",
+            name="Sandbox Delete Check",
         )
         self.scheduler.start()
         logger.info("APScheduler started for job check")

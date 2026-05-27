@@ -16,6 +16,7 @@ class State(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
     STOPPED = "stopped"
+    DELETED = "deleted"
 
 
 class IsAliveResponse(BaseModel):
@@ -53,6 +54,7 @@ class SandboxStatusResponse(BaseModel):
     start_time: str | None = None
     stop_time: str | None = None
     create_time: str | None = None
+    delete_time: str | None = None
 
 
 class CommandResponse(BaseModel):
