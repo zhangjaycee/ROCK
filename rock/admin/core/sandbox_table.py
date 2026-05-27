@@ -179,14 +179,25 @@ class SandboxTable:
 
     @_retry_on_disconnect
     @monitor_metastore_operation
-    async def list_by_in(self, column: str, values: list[str | int | float | bool]) -> list[dict]:
-        """IN query on a single column. Only columns in ``SandboxRecord.LIST_BY_ALLOWLIST`` are permitted."""
+    async def list_by_in(
+        self,
+        column: str,
+        values: list[str | int | float | bool],
+        limit: int | None = None,
+    ) -> list[dict]:
+        """IN query on a single column, optionally capped by ``limit``.
+
+        Only columns in ``SandboxRecord.LIST_BY_ALLOWLIST`` are permitted.
+        ``limit=None`` (default) returns all matches.
+        """
         if column not in SandboxRecord.LIST_BY_ALLOWLIST:
             raise ValueError(f"Querying by column '{column}' is not allowed")
         if not values:
             return []
         col_attr = getattr(SandboxRecord, column)
         stmt = select(SandboxRecord).where(col_attr.in_(values))
+        if limit is not None:
+            stmt = stmt.limit(limit)
         async with AsyncSession(self._db.engine) as session:
             result = await session.execute(stmt)
             return [r.to_dict() for r in result.scalars().all()]
