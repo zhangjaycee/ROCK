@@ -675,13 +675,6 @@ class DockerDeployment(AbstractDeployment):
         is in a stopped/exited state. A nonexistent container surfaces via
         `docker start` failing — see is_alive()'s poll-based detection.
         """
-        # TODO: once a sandbox delete API exists, move _cleanup_kata_disk() there;
-        # until then kata restart is blocked because _stop() deletes the .img file.
-        if self._config.use_kata_runtime:
-            raise NotImplementedError(
-                f"Restart is not supported for kata runtime containers (container={self._container_name}). "
-            )
-
         executor = get_executor()
         loop = asyncio.get_running_loop()
 
@@ -718,13 +711,12 @@ class DockerDeployment(AbstractDeployment):
         logger.info(f"Container {self._container_name} restarted successfully")
 
     async def delete(self) -> None:
-        """Remove the container via ``docker rm -f``.
+        """Remove the container via ``docker rm -f`` and clean up host resources.
 
         Idempotent — a container that doesn't exist counts as success because
-        nothing remains to clean up. The actor was previously stopped (or
-        freshly created without start), so there is no
-        ``self._container_process`` / ``self._runtime`` to unwind here.
-        Quota / log cleanup already ran during ``_stop`` and is not repeated.
+        nothing remains to clean up. Also removes the kata disk image file
+        (if applicable) so that host-side .img files are only reclaimed on
+        explicit delete, not on stop (which must be restartable).
         """
         container_name = self._container_name or (self._config.container_name if self._config else None)
         if not container_name:
@@ -734,6 +726,7 @@ class DockerDeployment(AbstractDeployment):
         executor = get_executor()
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(executor, self._docker_rm, container_name)
+        self._cleanup_kata_disk()
 
     @staticmethod
     def _docker_rm(container_name: str) -> None:
@@ -809,7 +802,6 @@ class DockerDeployment(AbstractDeployment):
                 logger.warning(f"Failed to kill container {self._container_name} with SIGKILL")
 
             self._container_process = None
-            self._cleanup_kata_disk()
             self._container_name = None
 
         if self._check_stop_task is not None:
