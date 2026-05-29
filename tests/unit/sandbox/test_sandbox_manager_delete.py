@@ -131,6 +131,78 @@ class TestDelete:
         manager._meta_store.archive.assert_awaited_once()
 
 
+class TestStopCascadeDelete:
+    """`docker run --rm` sandboxes collapse STOPPED → DELETED in one stop call,
+    so users don't observe a STOPPED row that auto-delete would reap later."""
+
+    @pytest.mark.asyncio
+    async def test_stop_running_with_remove_container_cascades_to_deleted(self, manager):
+        manager._meta_store.get = AsyncMock(
+            return_value={
+                "sandbox_id": "sb-1",
+                "state": State.RUNNING,
+                "host_ip": "1.2.3.4",
+                "start_time": "2026-05-28T00:00:00+00:00",
+                "spec": {
+                    "container_name": "sb-1",
+                    "image": "python:3.11",
+                    "memory": "2g",
+                    "cpus": 1,
+                    "remove_container": True,
+                },
+            }
+        )
+        await manager.stop("sb-1")
+        manager._operator.stop.assert_awaited_once()
+        manager._operator.delete.assert_awaited_once()
+        # on_stop archives with STOPPED, on_delete archives with DELETED.
+        assert manager._meta_store.archive.await_count == 2
+        last_info = manager._meta_store.archive.call_args[0][1]
+        assert last_info["state"] == State.DELETED
+        assert last_info["delete_time"]
+
+    @pytest.mark.asyncio
+    async def test_stop_running_without_remove_container_stays_stopped(self, manager):
+        manager._meta_store.get = AsyncMock(
+            return_value={
+                "sandbox_id": "sb-1",
+                "state": State.RUNNING,
+                "host_ip": "1.2.3.4",
+                "start_time": "2026-05-28T00:00:00+00:00",
+                "spec": {
+                    "container_name": "sb-1",
+                    "image": "python:3.11",
+                    "memory": "2g",
+                    "cpus": 1,
+                    "remove_container": False,
+                },
+            }
+        )
+        await manager.stop("sb-1")
+        manager._operator.stop.assert_awaited_once()
+        manager._operator.delete.assert_not_called()
+        manager._meta_store.archive.assert_awaited_once()
+        info = manager._meta_store.archive.call_args[0][1]
+        assert info["state"] == State.STOPPED
+
+    @pytest.mark.asyncio
+    async def test_stop_noop_on_already_stopped_does_not_cascade(self, manager):
+        # A redundant stop on an already-STOPPED sandbox must stay idempotent
+        # even if remove_container=True — auto-delete still owns this row's
+        # eventual STOPPED → DELETED transition.
+        manager._meta_store.get = AsyncMock(
+            return_value={
+                "sandbox_id": "sb-1",
+                "state": State.STOPPED,
+                "host_ip": "1.2.3.4",
+                "spec": {"container_name": "sb-1", "remove_container": True},
+            }
+        )
+        await manager.stop("sb-1")
+        manager._operator.stop.assert_not_called()
+        manager._operator.delete.assert_not_called()
+
+
 class TestCheckDeleteBackground:
     @pytest.mark.asyncio
     async def test_no_pending_does_nothing(self, manager):

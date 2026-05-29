@@ -220,6 +220,20 @@ class SandboxManager(BaseManager):
                 meta_store=self._meta_store,
                 reason=reason,
             )
+            # Cascade STOPPED → DELETED for `docker run --rm` containers.
+            # The container is already gone after operator.stop, so sitting in
+            # STOPPED would just defer kata `.img` cleanup and the metadata
+            # archive by up to auto_delete_seconds for no gain — and would
+            # leak a "stopped but uncleanable" row that restart cannot revive.
+            spec = (sm.sandbox_info or {}).get("spec") or {}
+            if spec.get("remove_container"):
+                await sm.send(
+                    "delete",
+                    sandbox_id=sandbox_id,
+                    operator=self._operator,
+                    meta_store=self._meta_store,
+                    reason=DeleteReason.IMMEDIATE,
+                )
 
     @monitor_sandbox_operation()
     async def delete(self, sandbox_id: str, reason: DeleteReason = DeleteReason.MANUAL) -> None:

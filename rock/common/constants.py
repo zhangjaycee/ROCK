@@ -40,3 +40,7 @@ class DeleteReason(str, Enum):
 
     MANUAL = "manual"
     EXPIRED = "expired"
+    # Cascade from stop on `docker run --rm` containers: the container is already
+    # gone after operator.stop, so we collapse STOPPED → DELETED immediately
+    # rather than waiting `auto_delete_seconds` to clean kata `.img` + metadata.
+    IMMEDIATE = "immediate"
