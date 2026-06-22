@@ -190,6 +190,15 @@ class ArchiveConfig:
 class SandboxLifecycleConfig:
     archive: ArchiveConfig = field(default_factory=ArchiveConfig)
 
+    default_startup_timeout_seconds: float = 600
+    """Default startup_timeout when SDK does not supply one. YAML: lifecycle.default_startup_timeout_seconds."""
+
+    min_startup_timeout_seconds: float = 600
+    """Floor for startup_timeout — SDK values below this are raised. YAML: lifecycle.min_startup_timeout_seconds."""
+
+    max_startup_timeout_seconds: float = 1800
+    """Ceiling for startup_timeout — values above this are capped. YAML: lifecycle.max_startup_timeout_seconds."""
+
     def __post_init__(self):
         if isinstance(self.archive, dict):
             self.archive = ArchiveConfig(**self.archive)
@@ -550,7 +559,6 @@ class RockConfig:
         config_map = {
             "sandbox_config": (SandboxConfig, "sandbox_config"),
             "proxy_service": (ProxyServiceConfig, "proxy_service"),
-            "lifecycle": (SandboxLifecycleConfig, "lifecycle"),
         }
 
         # Update configs that are present in nacos_result
@@ -568,6 +576,12 @@ class RockConfig:
             runtime_overrides = nacos_result["runtime"]
             if "instance_registry_mirrors" in runtime_overrides:
                 self.runtime.instance_registry_mirrors = list(runtime_overrides["instance_registry_mirrors"] or [])
+
+        if "lifecycle" in nacos_result and isinstance(nacos_result["lifecycle"], dict):
+            lc_overrides = nacos_result["lifecycle"]
+            for field in ("default_startup_timeout_seconds", "min_startup_timeout_seconds", "max_startup_timeout_seconds"):
+                if field in lc_overrides:
+                    setattr(self.lifecycle, field, float(lc_overrides[field]))
 
         logger.info(
             f"Updated config from Nacos: sandbox_config={self.sandbox_config}, proxy_service={self.proxy_service}"
