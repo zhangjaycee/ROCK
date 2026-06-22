@@ -2,6 +2,9 @@ from abc import ABC, abstractmethod
 
 from rock.config import RuntimeConfig
 from rock.deployments.constants import Port
+from rock.logger import init_logger
+
+logger = init_logger(__name__)
 
 
 class RuntimeEnv(ABC):
@@ -29,6 +32,10 @@ class RuntimeEnv(ABC):
             str: The command to execute to start the rocklet.
         """
         pass
+
+    def get_extra_env_args(self, config) -> list[str]:
+        """Return additional ``-e KEY=VALUE`` docker run args. Default: none."""
+        return []
 
 
 class DockerRuntimeEnv(RuntimeEnv):
@@ -192,3 +199,33 @@ class PipRuntimeEnv(RuntimeEnv):
     def get_rocklet_start_cmd(self):
         cmd = f"cp /tmp/local_files/docker_run_with_pip.sh /tmp/docker_run_with_pip.sh && chmod +x /tmp/docker_run_with_pip.sh && /tmp/docker_run_with_pip.sh {Port.PROXY}"
         return cmd
+
+
+class ConfigurableRuntimeEnv(RuntimeEnv):
+    """RuntimeEnv driven by the ``runtime_env`` section of an image_os_profile.
+
+    Allows per-image_os environment configuration without subclassing.
+    The dict has the shape::
+
+        volume_mounts: []                 # list of {local, container} dicts
+        rocklet_start_cmd: "..."          # shell command; {proxy_port} is expanded
+    """
+
+    def __init__(self, runtime_env: dict):
+        self._profile = runtime_env
+        logger.info(
+            f"[ConfigurableRuntimeEnv] initialized, "
+            f"volume_mounts={len(runtime_env.get('volume_mounts', []))}, "
+            f"has_rocklet_cmd={'yes' if runtime_env.get('rocklet_start_cmd') else 'no'}"
+        )
+
+    def get_volume_mounts(self) -> list:
+        if "volume_mounts" in self._profile:
+            return self._profile["volume_mounts"]
+        return DockerRuntimeEnv().get_volume_mounts()
+
+    def get_rocklet_start_cmd(self) -> str:
+        cmd = self._profile.get("rocklet_start_cmd")
+        if cmd:
+            return cmd.format(proxy_port=Port.PROXY)
+        return DockerRuntimeEnv().get_rocklet_start_cmd()
