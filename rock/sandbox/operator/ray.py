@@ -1,7 +1,6 @@
 import json
 
 import ray
-
 from rock import env_vars
 from rock.actions.sandbox.response import IsAliveResponse, State
 from rock.actions.sandbox.sandbox_info import SandboxInfo
@@ -45,16 +44,20 @@ class RayOperator(AbstractOperator):
             memory = parse_size_to_bytes(config.memory)
             actor_options["num_cpus"] = config.cpus
             actor_options["memory"] = memory
-            # Pin to a specific node via Ray's implicit `node:<ip>` resource
-            # (registered automatically per node with value 1.0; we consume a
-            # negligible 0.001 so we don't block other actors). Used by restart
-            # to land on the host that owns the existing container.
+            resources: dict = {}
             if pin_to_host_ip:
-                actor_options["resources"] = {f"node:{pin_to_host_ip}": 0.001}
-            return actor_options
+                resources[f"node:{pin_to_host_ip}"] = 0.001
+            if config.actor_resource and config.actor_resource_num > 0:
+                resources[config.actor_resource] = config.actor_resource_num
+            profile = getattr(config, "runtime_env_profile", None) or {}
+            for label in profile.get("node_labels", []):
+                resources[label] = 0.001
+            if resources:
+                actor_options["resources"] = resources
         except ValueError as e:
             logger.warning(f"Invalid memory size: {config.memory}", exc_info=e)
             raise BadRequestRockError(f"Invalid memory size: {config.memory}")
+        return actor_options
 
     async def submit(self, config: DockerDeploymentConfig, user_info: dict = {}) -> SandboxInfo:
         async with self._ray_service.get_ray_rwlock().read_lock():

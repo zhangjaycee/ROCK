@@ -8,6 +8,10 @@ from rock.deployments.config import DockerDeploymentConfig
 from rock.sandbox.operator.ray import RayOperator
 
 
+def _make_operator() -> RayOperator:
+    return RayOperator(ray_service=MagicMock(), runtime_config=MagicMock())
+
+
 @pytest.mark.need_ray
 def test_use_rocklet_returns_false_when_nacos_provider_is_none(ray_service, runtime_config):
     """When _nacos_provider is None, use_rocklet should return False"""
@@ -56,3 +60,66 @@ async def test_ray_operator(ray_service, runtime_config):
 
     stop_response: bool = await operator.stop("test")
     assert stop_response
+
+
+# --- _generate_actor_options unit tests (no Ray cluster needed) ---
+
+
+def test_generate_actor_options_no_custom_resource():
+    op = _make_operator()
+    config = DockerDeploymentConfig(container_name="sb-1", cpus=2, memory="4g")
+    opts = op._generate_actor_options(config)
+    assert opts["num_cpus"] == 2
+    assert "resources" not in opts
+
+
+def test_generate_actor_options_pin_to_host_ip():
+    op = _make_operator()
+    config = DockerDeploymentConfig(container_name="sb-1", cpus=2, memory="4g")
+    opts = op._generate_actor_options(config, pin_to_host_ip="1.2.3.4")
+    assert opts["resources"] == {"node:1.2.3.4": 0.001}
+
+
+def test_generate_actor_options_actor_resource():
+    op = _make_operator()
+    config = DockerDeploymentConfig(
+        container_name="sb-1", cpus=2, memory="4g",
+        actor_resource="custom-resource", actor_resource_num=1,
+    )
+    opts = op._generate_actor_options(config)
+    assert opts["resources"] == {"custom-resource": 1}
+    assert "scheduling_strategy" not in opts
+
+
+def test_generate_actor_options_actor_resource_and_pin_merged():
+    op = _make_operator()
+    config = DockerDeploymentConfig(
+        container_name="sb-1", cpus=2, memory="4g",
+        actor_resource="custom-resource", actor_resource_num=1,
+    )
+    opts = op._generate_actor_options(config, pin_to_host_ip="1.2.3.4")
+    assert opts["resources"] == {"node:1.2.3.4": 0.001, "custom-resource": 1}
+    assert "scheduling_strategy" not in opts
+
+
+def test_generate_actor_options_node_labels():
+    op = _make_operator()
+    config = DockerDeploymentConfig(container_name="sb-1", cpus=2, memory="4g")
+    config.runtime_env_profile = {"node_labels": ["kvm"]}
+    opts = op._generate_actor_options(config)
+    assert opts["resources"] == {"kvm": 0.001}
+
+
+def test_generate_actor_options_actor_resource_and_node_labels():
+    op = _make_operator()
+    config = DockerDeploymentConfig(
+        container_name="sb-1", cpus=2, memory="4g",
+        actor_resource="custom-resource", actor_resource_num=1,
+    )
+    config.runtime_env_profile = {"node_labels": ["kvm"]}
+    opts = op._generate_actor_options(config, pin_to_host_ip="1.2.3.4")
+    assert opts["resources"] == {
+        "node:1.2.3.4": 0.001,
+        "custom-resource": 1,
+        "kvm": 0.001,
+    }
