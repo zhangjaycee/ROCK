@@ -332,6 +332,11 @@ class RuntimeConfig:
     string (e.g. "reg-a.aliyuncs.com/mirror-1"). When empty, the env var is
     not set and downstream tools skip mirror rewriting."""
 
+    runtime_env_profiles: dict = field(default_factory=dict)
+    """Base runtime-env profiles keyed by profile name. Nacos runtime_env_profiles
+    are merged on top at request time via _apply_runtime_env_profile().
+    YAML: runtime.runtime_env_profiles.<name>: {images, rocklet_start_cmd, ...}"""
+
     def __post_init__(self) -> None:
         # Convert dict to StandardSpec if needed
         if isinstance(self.standard_spec, dict):

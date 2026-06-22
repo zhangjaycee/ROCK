@@ -1,4 +1,6 @@
+import fnmatch
 import math
+import os
 import re
 import time
 from typing import Annotated, Any
@@ -269,6 +271,56 @@ async def _apply_timeout_defaults(config: DockerDeploymentConfig) -> None:
     config.startup_timeout = min(config.startup_timeout, lifecycle.max_startup_timeout_seconds)
 
 
+async def _apply_runtime_env_profile(config: DockerDeploymentConfig) -> None:
+    """Match image against runtime_env_profiles and apply the first match to config.
+
+    Profile sources are merged in priority order:
+      1. rock YAML (runtime.runtime_env_profiles) — base config
+      2. Nacos runtime_env_profiles — incremental override (same name replaces whole profile)
+    The merged dict is iterated in insertion order; the first profile whose
+    ``images`` list contains an fnmatch pattern matching ``config.image`` wins.
+
+    Side-effects when a profile matches:
+    - config.runtime_env_profile is set to the matched profile dict (used by DockerDeployment
+      to instantiate ConfigurableRuntimeEnv instead of the ROCK_WORKER_ENV_TYPE fallback)
+    - config.startup_timeout is updated if the profile declares one and the SDK didn't set it
+    - profile["node_labels"] are injected as Ray resource requests in _generate_actor_options()
+    """
+    profiles: dict = {}
+    yaml_profiles = getattr(sandbox_manager.rock_config.runtime, "runtime_env_profiles", None)
+    if yaml_profiles:
+        profiles.update(yaml_profiles)
+
+    nacos = sandbox_manager.rock_config.nacos_provider
+    if nacos is not None:
+        nacos_config = await nacos.get_config() or {}
+        nacos_profiles = nacos_config.get("runtime_env_profiles", {})
+        if isinstance(nacos_profiles, dict):
+            profiles.update(nacos_profiles)
+
+    for name, data in profiles.items():
+        if not isinstance(data, dict):
+            continue
+        images = data.get("images", [])
+        if not any(fnmatch.fnmatch(config.image, pattern) for pattern in images):
+            continue
+
+        config.runtime_env_profile = {"name": name, **data}
+
+        # Apply startup_timeout from profile only when SDK did not supply one
+        profile_timeout = data.get("startup_timeout")
+        if profile_timeout and config.startup_timeout is None:
+            config.startup_timeout = float(profile_timeout)
+
+        # Pass through host env vars into extended_params for ConfigurableRuntimeEnv to pick up
+        for var in data.get("host_env_passthrough", []):
+            val = os.environ.get(var)
+            if val and var not in config.extended_params:
+                config.extended_params[var] = val
+
+        return
+
+
 async def _apply_accelerator_type_validation(config: DockerDeploymentConfig) -> None:
     """Validate ``config.accelerator_type`` against the built-in enum union with
     Nacos-provided extras.
@@ -340,6 +392,7 @@ async def start(request: SandboxStartRequest) -> RockResponse[SandboxStartRespon
     await _apply_accelerator_type_validation(config)
     await _apply_kata_runtime_switch(config)
     await _apply_kata_disk_size(config)
+    await _apply_runtime_env_profile(config)
     await _apply_timeout_defaults(config)
     await _apply_disk_limits(config)
     await _apply_image_registry_mirror(config)
@@ -357,6 +410,7 @@ async def start_async(
     await _apply_accelerator_type_validation(config)
     await _apply_kata_runtime_switch(config)
     await _apply_kata_disk_size(config)
+    await _apply_runtime_env_profile(config)
     await _apply_timeout_defaults(config)
     await _apply_cpu_overcommit_default(config, headers.user_info.get("rock_authorization"))
     await _apply_disk_limits(config)
