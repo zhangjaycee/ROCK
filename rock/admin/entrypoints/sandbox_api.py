@@ -142,12 +142,14 @@ async def _http_probe_manifest(
     """Check whether ``repo:tag`` exists on *registry* via the v2 manifest API."""
     url = f"https://{registry}/v2/{repo}/manifests/{tag}"
     headers = {
-        "Accept": ", ".join([
-            "application/vnd.docker.distribution.manifest.v2+json",
-            "application/vnd.oci.image.manifest.v1+json",
-            "application/vnd.docker.distribution.manifest.list.v2+json",
-            "application/vnd.oci.image.index.v1+json",
-        ])
+        "Accept": ", ".join(
+            [
+                "application/vnd.docker.distribution.manifest.v2+json",
+                "application/vnd.oci.image.manifest.v1+json",
+                "application/vnd.docker.distribution.manifest.list.v2+json",
+                "application/vnd.oci.image.index.v1+json",
+            ]
+        )
     }
     auth = (username, password) if username and password else None
 
@@ -253,6 +255,7 @@ async def _apply_image_registry_mirror(config: DockerDeploymentConfig) -> None:
             return
     logger.info(f"image registry mirror miss for {original_image!r}, keep original")
 
+
 async def _apply_timeout_defaults(config: DockerDeploymentConfig) -> None:
     """Apply startup_timeout default, min and max from SandboxLifecycleConfig (YAML + Nacos).
 
@@ -263,10 +266,18 @@ async def _apply_timeout_defaults(config: DockerDeploymentConfig) -> None:
     Nacos updates lifecycle via RockConfig.update() called in DeploymentManager.init_config().
     """
     lifecycle = sandbox_manager.rock_config.lifecycle
+    sdk_timeout = config.startup_timeout
     if config.startup_timeout is None:
         config.startup_timeout = lifecycle.default_startup_timeout_seconds
     config.startup_timeout = max(config.startup_timeout, lifecycle.min_startup_timeout_seconds)
     config.startup_timeout = min(config.startup_timeout, lifecycle.max_startup_timeout_seconds)
+    logger.info(
+        f"[startup_timeout] sdk_value={sdk_timeout}, "
+        f"lifecycle(default={lifecycle.default_startup_timeout_seconds}, "
+        f"min={lifecycle.min_startup_timeout_seconds}, "
+        f"max={lifecycle.max_startup_timeout_seconds}), "
+        f"final={config.startup_timeout}s"
+    )
 
 
 async def _apply_image_os_profile(config: DockerDeploymentConfig) -> None:
@@ -346,7 +357,7 @@ async def _apply_accelerator_type_validation(config: DockerDeploymentConfig) -> 
 
     if config.accelerator_type not in allowed:
         raise BadRequestRockError(
-            f"Invalid accelerator_type {config.accelerator_type!r}. " f"Allowed values: {sorted(allowed)}"
+            f"Invalid accelerator_type {config.accelerator_type!r}. Allowed values: {sorted(allowed)}"
         )
 
 
