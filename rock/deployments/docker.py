@@ -22,7 +22,13 @@ from rock.deployments.config import DockerDeploymentConfig
 from rock.deployments.constants import Port, Status
 from rock.deployments.docker_client import TempAuthDockerClient, TempAuthDockerClientError
 from rock.deployments.hooks.abstract import CombinedDeploymentHook, DeploymentHook
-from rock.deployments.runtime_env import ConfigurableRuntimeEnv, DockerRuntimeEnv, LocalRuntimeEnv, PipRuntimeEnv, UvRuntimeEnv
+from rock.deployments.runtime_env import (
+    ConfigurableRuntimeEnv,
+    DockerRuntimeEnv,
+    LocalRuntimeEnv,
+    PipRuntimeEnv,
+    UvRuntimeEnv,
+)
 from rock.deployments.sandbox_validator import DockerSandboxValidator
 from rock.deployments.status import PersistedServiceStatus, ServiceStatus
 from rock.logger import init_logger
@@ -459,7 +465,7 @@ class DockerDeployment(AbstractDeployment):
             )
             if findmnt_result.returncode != 0 or not findmnt_result.stdout.strip():
                 logger.warning(
-                    f"findmnt failed for upper_dir {upper_dir!r}: " f"{findmnt_result.stderr.strip() or 'empty output'}"
+                    f"findmnt failed for upper_dir {upper_dir!r}: {findmnt_result.stderr.strip() or 'empty output'}"
                 )
                 return
             xfs_mountpoint = findmnt_result.stdout.strip()
@@ -509,6 +515,11 @@ class DockerDeployment(AbstractDeployment):
         loop = asyncio.get_running_loop()
         startup_timeout = self._config.startup_timeout or 600.0
         deadline = time.monotonic() + startup_timeout
+        logger.info(
+            f"[{self._container_name}] startup_timeout={startup_timeout}s, "
+            f"image_pull_timeout={int(startup_timeout)}s, "
+            f"runtime_env={type(self._runtime_env).__name__}"
+        )
 
         await loop.run_in_executor(executor, self._pull_image, int(startup_timeout))
         if self._config.python_standalone_dir is not None:
@@ -603,6 +614,11 @@ class DockerDeployment(AbstractDeployment):
         )
         self._runtime.set_executor(executor)
         remaining = max(deadline - time.monotonic(), 1.0)
+        elapsed = startup_timeout - remaining
+        logger.info(
+            f"[{self._container_name}] docker create+start done, "
+            f"elapsed={elapsed:.1f}s, remaining_for_wait_alive={remaining:.1f}s"
+        )
         with StageTimer("startup_timing", f"[{self._container_name}] Wait until alive", logger):
             await self._wait_until_alive(timeout=remaining)
         if self._config.enable_auto_clear:
@@ -660,7 +676,10 @@ class DockerDeployment(AbstractDeployment):
     def _docker_create(self, cmd: list[str]) -> None:
         """Create the container without starting it."""
         try:
+            logger.info(f"[{self._container_name}] docker create starting (timeout=60s)")
+            t0 = time.monotonic()
             subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=60)
+            logger.info(f"[{self._container_name}] docker create succeeded in {time.monotonic() - t0:.1f}s")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             logger.error(f"Failed to create container {self._container_name}")
             self._service_status.update_status(
@@ -671,6 +690,7 @@ class DockerDeployment(AbstractDeployment):
     def _docker_start(self) -> subprocess.Popen:
         """Start a previously-created container with stdout/stderr attached."""
         try:
+            logger.info(f"[{self._container_name}] docker start (attached mode)")
             exec_rlt = subprocess.Popen(
                 ["docker", "start", "-a", self._container_name],
                 stdout=subprocess.PIPE,
@@ -679,6 +699,7 @@ class DockerDeployment(AbstractDeployment):
             self._service_status.update_status(
                 phase_name="docker_run", status=Status.RUNNING, message="docker run running"
             )
+            logger.info(f"[{self._container_name}] docker start issued, pid={exec_rlt.pid}")
             return exec_rlt
         except:  # Catch exception
             logger.error(f"Failed to start container {self._container_name}")

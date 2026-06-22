@@ -144,12 +144,14 @@ async def _http_probe_manifest(
     """Check whether ``repo:tag`` exists on *registry* via the v2 manifest API."""
     url = f"https://{registry}/v2/{repo}/manifests/{tag}"
     headers = {
-        "Accept": ", ".join([
-            "application/vnd.docker.distribution.manifest.v2+json",
-            "application/vnd.oci.image.manifest.v1+json",
-            "application/vnd.docker.distribution.manifest.list.v2+json",
-            "application/vnd.oci.image.index.v1+json",
-        ])
+        "Accept": ", ".join(
+            [
+                "application/vnd.docker.distribution.manifest.v2+json",
+                "application/vnd.oci.image.manifest.v1+json",
+                "application/vnd.docker.distribution.manifest.list.v2+json",
+                "application/vnd.oci.image.index.v1+json",
+            ]
+        )
     }
     auth = (username, password) if username and password else None
 
@@ -255,6 +257,7 @@ async def _apply_image_registry_mirror(config: DockerDeploymentConfig) -> None:
             return
     logger.info(f"image registry mirror miss for {original_image!r}, keep original")
 
+
 async def _apply_timeout_defaults(config: DockerDeploymentConfig) -> None:
     """Apply startup_timeout default, min and max from SandboxLifecycleConfig (YAML + Nacos).
 
@@ -265,10 +268,18 @@ async def _apply_timeout_defaults(config: DockerDeploymentConfig) -> None:
     Nacos updates lifecycle via RockConfig.update() called in DeploymentManager.init_config().
     """
     lifecycle = sandbox_manager.rock_config.lifecycle
+    sdk_timeout = config.startup_timeout
     if config.startup_timeout is None:
         config.startup_timeout = lifecycle.default_startup_timeout_seconds
     config.startup_timeout = max(config.startup_timeout, lifecycle.min_startup_timeout_seconds)
     config.startup_timeout = min(config.startup_timeout, lifecycle.max_startup_timeout_seconds)
+    logger.info(
+        f"[startup_timeout] sdk_value={sdk_timeout}, "
+        f"lifecycle(default={lifecycle.default_startup_timeout_seconds}, "
+        f"min={lifecycle.min_startup_timeout_seconds}, "
+        f"max={lifecycle.max_startup_timeout_seconds}), "
+        f"final={config.startup_timeout}s"
+    )
 
 
 async def _apply_runtime_env_profile(config: DockerDeploymentConfig) -> None:
@@ -298,12 +309,30 @@ async def _apply_runtime_env_profile(config: DockerDeploymentConfig) -> None:
         if isinstance(nacos_profiles, dict):
             profiles.update(nacos_profiles)
 
+    logger.info(
+        f"[runtime_env_profile] image={config.image!r}, "
+        f"yaml_profile_names={list((yaml_profiles or {}).keys())}, "
+        f"nacos_profile_names={list(nacos_profiles.keys()) if nacos is not None and isinstance(nacos_profiles, dict) else '(no nacos)'}, "
+        f"merged_profile_names={list(profiles.keys())}"
+    )
+
     for name, data in profiles.items():
         if not isinstance(data, dict):
             continue
         images = data.get("images", [])
-        if not any(fnmatch.fnmatch(config.image, pattern) for pattern in images):
+        matched_pattern = next((p for p in images if fnmatch.fnmatch(config.image, p)), None)
+        if matched_pattern is None:
+            logger.info(f"[runtime_env_profile] profile {name!r} patterns={images} — no match")
             continue
+
+        logger.info(
+            f"[runtime_env_profile] profile {name!r} MATCHED via pattern {matched_pattern!r}, "
+            f"volume_mounts={len(data.get('volume_mounts', []))}, "
+            f"rocklet_start_cmd={'yes' if data.get('rocklet_start_cmd') else 'no'}, "
+            f"node_labels={data.get('node_labels', [])}, "
+            f"startup_timeout={data.get('startup_timeout')}, "
+            f"host_env_passthrough={data.get('host_env_passthrough', [])}"
+        )
 
         config.runtime_env_profile = {"name": name, **data}
 
@@ -311,6 +340,9 @@ async def _apply_runtime_env_profile(config: DockerDeploymentConfig) -> None:
         profile_timeout = data.get("startup_timeout")
         if profile_timeout and config.startup_timeout is None:
             config.startup_timeout = float(profile_timeout)
+            logger.info(
+                f"[runtime_env_profile] applied profile startup_timeout={profile_timeout}s (SDK did not set one)"
+            )
 
         # Pass through host env vars into extended_params for ConfigurableRuntimeEnv to pick up
         for var in data.get("host_env_passthrough", []):
@@ -319,6 +351,8 @@ async def _apply_runtime_env_profile(config: DockerDeploymentConfig) -> None:
                 config.extended_params[var] = val
 
         return
+
+    logger.info(f"[runtime_env_profile] no profile matched for image={config.image!r}")
 
 
 async def _apply_accelerator_type_validation(config: DockerDeploymentConfig) -> None:
@@ -344,7 +378,7 @@ async def _apply_accelerator_type_validation(config: DockerDeploymentConfig) -> 
 
     if config.accelerator_type not in allowed:
         raise BadRequestRockError(
-            f"Invalid accelerator_type {config.accelerator_type!r}. " f"Allowed values: {sorted(allowed)}"
+            f"Invalid accelerator_type {config.accelerator_type!r}. Allowed values: {sorted(allowed)}"
         )
 
 

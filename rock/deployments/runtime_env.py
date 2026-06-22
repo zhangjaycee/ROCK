@@ -2,6 +2,9 @@ from abc import ABC, abstractmethod
 
 from rock.config import RuntimeConfig
 from rock.deployments.constants import Port
+from rock.logger import init_logger
+
+logger = init_logger(__name__)
 
 
 class RuntimeEnv(ABC):
@@ -214,6 +217,13 @@ class ConfigurableRuntimeEnv(RuntimeEnv):
 
     def __init__(self, profile: dict):
         self._profile = profile
+        logger.info(
+            f"[ConfigurableRuntimeEnv] initialized with profile={profile.get('name', '?')!r}, "
+            f"volume_mounts={len(profile.get('volume_mounts', []))}, "
+            f"has_rocklet_cmd={'yes' if profile.get('rocklet_start_cmd') else 'no'}, "
+            f"extra_env_vars={list(profile.get('extra_env_vars', {}).keys())}, "
+            f"host_env_passthrough={profile.get('host_env_passthrough', [])}"
+        )
 
     def get_volume_mounts(self) -> list:
         if "volume_mounts" in self._profile:
